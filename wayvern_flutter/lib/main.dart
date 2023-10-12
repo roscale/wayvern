@@ -113,6 +113,17 @@ class _MyHomePageState extends State<MyHomePage> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const CircularProgressIndicator(),
+            Expanded(child: ListView(
+              children: [
+                for (var i = 0; i < 100; i++)
+                  ListTile(
+                    title: Text('Item $i'),
+                    subtitle: Text('Subtitle $i'),
+                    leading: const Icon(Icons.favorite),
+                    trailing: const Icon(Icons.more_vert),
+                  ),
+              ],
+            ))
           ],
         ),
       ),

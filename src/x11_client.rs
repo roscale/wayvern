@@ -47,6 +47,9 @@ use crate::{
     CalloopData,
     flutter_engine::{EmbedderChannels, FlutterEngine},
 };
+use crate::x11_client::input_handling::handle_input;
+
+mod input_handling;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
@@ -123,6 +126,17 @@ pub fn run_x11_client() {
         },
     };
 
+    let (flutter_engine, EmbedderChannels {
+        rx_present,
+        rx_request_rbo,
+        mut tx_rbo,
+        tx_output_height,
+        rx_baton: _,
+    }) = FlutterEngine::new(&egl_context).unwrap();
+
+    let size = window.size();
+    tx_output_height.send(size.h).unwrap();
+    flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     let mut state = {
         App {
@@ -138,23 +152,14 @@ pub fn run_x11_client() {
                     refresh: 144_000,
                 },
             },
+            flutter_engine,
+            mouse_button_tracker: Default::default(),
+            mouse_position: Default::default(),
             compositor_state: CompositorState::new::<App<X11Data>>(&display_handle),
             xdg_shell_state: XdgShellState::new::<App<X11Data>>(&display_handle),
             shm_state: ShmState::new::<App<X11Data>>(&display_handle, vec![]),
         }
     };
-
-    let (flutter_engine, EmbedderChannels {
-        rx_present,
-        rx_request_rbo,
-        mut tx_rbo,
-        tx_output_height,
-        rx_baton: _,
-    }) = FlutterEngine::new(&egl_context).unwrap();
-
-    let size = window.size();
-    tx_output_height.send(size.h).unwrap();
-    flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -180,18 +185,16 @@ pub fn run_x11_client() {
                 };
 
                 let _ = tx_output_height.send(new_size.h);
-                flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+                data.state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
                 if let Some(baton) = data.baton.take() {
-                    flutter_engine.on_vsync(baton).unwrap();
+                    data.state.flutter_engine.on_vsync(baton).unwrap();
                     data.baton = None;
                 }
                 // TODO
             }
-            X11Event::Input(_event) => {
-                // TODO
-            }
+            X11Event::Input(event) => handle_input(&event, data),
         })
         .expect("Failed to insert X11 Backend into event loop");
 

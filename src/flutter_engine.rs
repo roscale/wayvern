@@ -43,10 +43,11 @@ use crate::{
         },
     },
 };
+use crate::flutter_engine::embedder::{FlutterEngineSendPointerEvent, FlutterPointerEvent};
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 
 mod callbacks;
-mod embedder;
+pub mod embedder;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
@@ -178,6 +179,14 @@ impl FlutterEngine {
         Ok((Self(flutter_engine, flutter_engine_data), embedder_channels))
     }
 
+    pub fn current_time_ns() -> u64 {
+        unsafe { FlutterEngineGetCurrentTime() }
+    }
+
+    pub fn current_time_ms() -> u64 {
+        unsafe { FlutterEngineGetCurrentTime() / 1000 }
+    }
+
     pub fn send_window_metrics(&self, size: Size<u32, Physical>) -> Result<(), Box<dyn std::error::Error>> {
         let event = FlutterWindowMetricsEvent {
             struct_size: size_of::<FlutterWindowMetricsEvent>(),
@@ -206,6 +215,14 @@ impl FlutterEngine {
         let result = unsafe { FlutterEngineOnVsync(self.0, baton.0, now, next_frame) };
         if result != 0 {
             return Err(format!("Could not send vsync baton, error {result}").into());
+        }
+        Ok(())
+    }
+
+    pub fn send_pointer_event(&self, event: FlutterPointerEvent) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineSendPointerEvent(self.0, &event as *const _, 1) };
+        if result != 0 {
+            return Err(format!("Could not send pointer event, error {result}").into());
         }
         Ok(())
     }

@@ -515,6 +515,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "input-linux"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f403224ea808abe6182696e3a36d9875c0e942ba7c99239f9ef545b96e35606"
+dependencies = [
+ "input-linux-sys",
+ "nix 0.26.4",
+]
+
+[[package]]
+name = "input-linux-sys"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a687a25a4973027df9153753a5589f97fe1e958f694a34eea5606ae65299ab8"
+dependencies = [
+ "libc",
+ "nix 0.26.4",
+]
+
+[[package]]
 name = "input-sys"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -804,6 +824,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset 0.7.1",
+ "pin-utils",
 ]
 
 [[package]]
@@ -953,6 +974,12 @@ name = "pin-project-lite"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8afb450f006bf6385ca15ef45d71d2288452bc3683ce2e2cacc0d18e4be60b58"
+
+[[package]]
+name = "pin-utils"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkg-config"
@@ -1708,6 +1735,7 @@ name = "wayvern"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "input-linux",
  "log",
  "profiling",
  "smithay",

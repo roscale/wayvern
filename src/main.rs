@@ -42,9 +42,13 @@ use smithay::{
 };
 use smithay::reexports::calloop::channel;
 
+use crate::flutter_engine::FlutterEngine;
+use crate::mouse_button_tracker::MouseButtonTracker;
+
 mod flutter_engine;
 mod x11_client;
 mod gles_framebuffer_importer;
+mod mouse_button_tracker;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -115,6 +119,11 @@ impl<BackendData: Backend> DmabufHandler for App<BackendData> {
 pub struct App<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
     pub backend_data: BackendData,
+
+    pub flutter_engine: FlutterEngine,
+    pub mouse_button_tracker: MouseButtonTracker,
+    pub mouse_position: (f64, f64),
+
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
