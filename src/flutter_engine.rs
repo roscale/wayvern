@@ -59,7 +59,11 @@ pub struct FlutterEngine(FlutterEngineInternal, *mut FlutterEngineData);
 pub struct Baton(isize);
 
 impl FlutterEngine {
-    pub fn new(root_egl_context: &EGLContext) -> Result<(Self, EmbedderChannels), Box<dyn std::error::Error>> {
+    pub fn new() -> Self {
+        Self(null_mut(), null_mut())
+    }
+
+    pub fn run(&mut self, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_rbo, rx_request_rbo) = channel::channel::<()>();
         let (tx_rbo, rx_rbo) = channel::channel::<Option<Dmabuf>>();
@@ -76,8 +80,8 @@ impl FlutterEngine {
 
         let embedder_channels = EmbedderChannels {
             rx_present,
-            rx_request_rbo,
-            tx_rbo,
+            rx_request_fbo: rx_request_rbo,
+            tx_fbo: tx_rbo,
             tx_output_height,
             rx_baton,
         };
@@ -176,7 +180,10 @@ impl FlutterEngine {
             return Err(format!("Could not initalize the Flutter engine, error {result}").into());
         }
 
-        Ok((Self(flutter_engine, flutter_engine_data), embedder_channels))
+        self.0 = flutter_engine;
+        self.1 = flutter_engine_data;
+
+        Ok(embedder_channels)
     }
 
     pub fn current_time_ns() -> u64 {
@@ -283,8 +290,8 @@ pub struct FlutterEngineChannels {
 
 pub struct EmbedderChannels {
     pub rx_present: channel::Channel<()>,
-    pub rx_request_rbo: channel::Channel<()>,
-    pub tx_rbo: channel::Sender<Option<Dmabuf>>,
+    pub rx_request_fbo: channel::Channel<()>,
+    pub tx_fbo: channel::Sender<Option<Dmabuf>>,
     pub tx_output_height: channel::Sender<u16>,
     pub rx_baton: channel::Channel<Baton>,
 }

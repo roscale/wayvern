@@ -7,7 +7,7 @@ use crate::flutter_engine::embedder::{FlutterPointerDeviceKind_kFlutterPointerDe
 use crate::flutter_engine::FlutterEngine;
 use crate::x11_client::X11Data;
 
-pub fn handle_input(event: &input::InputEvent<X11Input>, data: &mut CalloopData<X11Data>) {
+pub fn handle_input(event: &InputEvent<X11Input>, data: &mut CalloopData<X11Data>) {
     match event {
         InputEvent::DeviceAdded { .. } => {}
         InputEvent::DeviceRemoved { .. } => {}

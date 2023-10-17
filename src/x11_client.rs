@@ -39,14 +39,13 @@ use smithay::{
         shm::ShmState,
     },
 };
+use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::reexports::calloop::channel;
+use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 
-use crate::{
-    App,
-    Backend,
-    CalloopData,
-    flutter_engine::{EmbedderChannels, FlutterEngine},
-};
+use crate::{App, Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, flutter_engine};
 use crate::x11_client::input_handling::handle_input;
 
 mod input_handling;
@@ -64,7 +63,6 @@ pub fn run_x11_client() {
     let gbm_device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
     let egl_display = egl::EGLDisplay::new(gbm_device.clone()).expect("Failed to create EGLDisplay");
     let egl_context = egl::EGLContext::new(&egl_display).expect("Failed to create EGLContext");
-
 
     let window = x11::WindowBuilder::new()
         .title("Anvil")
@@ -126,13 +124,15 @@ pub fn run_x11_client() {
         },
     };
 
-    let (flutter_engine, EmbedderChannels {
+    let mut flutter_engine = FlutterEngine::new();
+
+    let EmbedderChannels {
         rx_present,
-        rx_request_rbo,
-        mut tx_rbo,
+        rx_request_fbo: rx_request_rbo,
+        tx_fbo: mut tx_rbo,
         tx_output_height,
         rx_baton: _,
-    }) = FlutterEngine::new(&egl_context).unwrap();
+    } = flutter_engine.run(&egl_context).unwrap();
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
@@ -141,6 +141,8 @@ pub fn run_x11_client() {
     let mut state = {
         App {
             running: Arc::new(AtomicBool::new(true)),
+            display_handle: display_handle.clone(),
+            loop_handle: event_loop.handle(),
             backend_data: X11Data {
                 x11_surface,
                 // renderer,
@@ -152,6 +154,7 @@ pub fn run_x11_client() {
                     refresh: 144_000,
                 },
             },
+            // flutter_engine,
             flutter_engine,
             mouse_button_tracker: Default::default(),
             mouse_position: Default::default(),
@@ -201,11 +204,11 @@ pub fn run_x11_client() {
     event_loop.handle().insert_source(rx_request_rbo, move |_, _, data| {
         match data.state.backend_data.x11_surface.buffer() {
             Ok((dmabuf, _age)) => {
-                let _ = data.tx_rbo.send(Some(dmabuf));
+                let _ = data.tx_fbo.send(Some(dmabuf));
             }
             Err(err) => {
                 error!("{err}");
-                let _ = data.tx_rbo.send(None);
+                let _ = data.tx_fbo.send(None);
             }
         }
     }).unwrap();
@@ -221,7 +224,7 @@ pub fn run_x11_client() {
         let mut calloop_data = CalloopData {
             state,
             display_handle,
-            tx_rbo,
+            tx_fbo: tx_rbo,
             baton,
         };
 
@@ -230,7 +233,7 @@ pub fn run_x11_client() {
         CalloopData {
             state,
             display_handle,
-            tx_rbo,
+            tx_fbo: tx_rbo,
             baton,
         } = calloop_data;
 

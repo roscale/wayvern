@@ -40,7 +40,10 @@ use smithay::{
         shm::{ShmHandler, ShmState},
     },
 };
-use smithay::reexports::calloop::channel;
+use smithay::backend::allocator::{Allocator, Swapchain};
+use smithay::backend::allocator::dmabuf::AnyError;
+use smithay::desktop::Space;
+use smithay::reexports::calloop::{channel, LoopHandle};
 
 use crate::flutter_engine::FlutterEngine;
 use crate::mouse_button_tracker::MouseButtonTracker;
@@ -49,6 +52,14 @@ mod flutter_engine;
 mod x11_client;
 mod gles_framebuffer_importer;
 mod mouse_button_tracker;
+mod drm_backend;
+
+pub struct CalloopData<BackendData: Backend + 'static> {
+    pub state: App<BackendData>,
+    pub display_handle: DisplayHandle,
+    pub tx_fbo: channel::Sender<Option<Dmabuf>>,
+    pub baton: Option<flutter_engine::Baton>,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -57,7 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing_subscriber::fmt().init();
     }
 
-    x11_client::run_x11_client();
+    drm_backend::run_drm_backend();
+    // x11_client::run_x11_client();
     Ok(())
 }
 
@@ -118,7 +130,10 @@ impl<BackendData: Backend> DmabufHandler for App<BackendData> {
 
 pub struct App<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
+    pub display_handle: DisplayHandle,
+    pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
     pub backend_data: BackendData,
+    // space: Space<WindowElement>,
 
     pub flutter_engine: FlutterEngine,
     pub mouse_button_tracker: MouseButtonTracker,
@@ -130,13 +145,6 @@ pub struct App<BackendData: Backend + 'static> {
 }
 
 pub trait Backend {}
-
-pub struct CalloopData<BackendData: Backend + 'static> {
-    pub state: App<BackendData>,
-    pub display_handle: DisplayHandle,
-    pub tx_rbo: channel::Sender<Option<Dmabuf>>,
-    pub baton: Option<flutter_engine::Baton>,
-}
 
 pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(

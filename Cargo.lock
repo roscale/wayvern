@@ -346,6 +346,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a4f1c0468062a56cd5705f1e3b5409eb286d5596a2028ec8e947595d7e715ae"
 
 [[package]]
+name = "edid-rs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ab5fa33485cd85ac354df485819a63360fefa312fe04cffe65e6f175be1522c"
+
+[[package]]
 name = "either"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1241,7 +1247,7 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/Smithay/smithay#d60b1b83e71ae73aecad799025e3ea30e844c229"
+source = "git+https://github.com/Smithay/smithay?rev=4e41ab0#4e41ab0694c1c43324cc217dcf2a203cd240c0dc"
 dependencies = [
  "appendlist",
  "ash",
@@ -1304,6 +1310,15 @@ dependencies = [
  "wayland-client",
  "wayland-cursor",
  "wayland-protocols 0.29.5",
+]
+
+[[package]]
+name = "smithay-drm-extras"
+version = "0.1.0"
+dependencies = [
+ "drm",
+ "edid-rs",
+ "pkg-config",
 ]
 
 [[package]]
@@ -1739,6 +1754,7 @@ dependencies = [
  "log",
  "profiling",
  "smithay",
+ "smithay-drm-extras",
  "thiserror",
  "tracing",
  "tracing-subscriber",
