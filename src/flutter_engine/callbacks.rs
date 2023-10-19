@@ -40,10 +40,10 @@ pub unsafe extern "C" fn clear_current(user_data: *mut c_void) -> bool {
 
 pub unsafe extern "C" fn fbo_callback(user_data: *mut c_void) -> u32 {
     let state = &mut *(user_data as *mut FlutterEngineData);
-    if state.channels.tx_request_rbo.send(()).is_err() {
+    if state.channels.tx_request_fbo.send(()).is_err() {
         return 0;
     }
-    if let Ok(Some(dmabuf)) = state.channels.rx_rbo.recv() {
+    if let Ok(Some(dmabuf)) = state.channels.rx_fbo.recv() {
         state.framebuffer_importer.import_framebuffer(&state.main_egl_context, dmabuf).unwrap_or(0)
     } else {
         0
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn surface_transformation(user_data: *mut ::std::os::raw::
     }
 }
 
-pub unsafe extern "C" fn _vsync_callback(user_data: *mut std::os::raw::c_void, baton: isize) {
+pub unsafe extern "C" fn vsync_callback(user_data: *mut std::os::raw::c_void, baton: isize) {
     let state = &mut *(user_data as *mut FlutterEngineData);
     let _ = state.channels.tx_baton.send(Baton(baton));
 }

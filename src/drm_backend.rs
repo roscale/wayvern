@@ -25,9 +25,8 @@ use smithay::backend::drm::{CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError
 use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::egl;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
-use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::{ImportDma};
+use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -36,6 +35,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Output, PhysicalProperties, Subpixel};
+use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags, OFlag};
 use smithay::reexports::drm::Device as _;
@@ -51,6 +51,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
 use crate::{Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, GlobalState};
+use crate::input_handling::handle_input;
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
 // - we do not want something like Abgr4444, which looses color information, if something better is available
@@ -122,6 +123,7 @@ pub fn run_drm_backend() {
         flutter_engine: FlutterEngine::default(),
         mouse_button_tracker: Default::default(),
         mouse_position: Default::default(),
+        next_vblank_scheduled: false,
         compositor_state: CompositorState::new::<GlobalState<DrmBackend>>(&display_handle),
         xdg_shell_state: XdgShellState::new::<GlobalState<DrmBackend>>(&display_handle),
         shm_state: ShmState::new::<GlobalState<DrmBackend>>(&display_handle, vec![]),
@@ -136,7 +138,7 @@ pub fn run_drm_backend() {
         rx_request_fbo,
         mut tx_fbo,
         tx_output_height: _,
-        rx_baton: _,
+        rx_baton,
     } = state.flutter_engine.run(state.backend_data.get_gpu_data().gles_renderer.egl_context()).unwrap();
 
     // Initialize already present connectors.
@@ -153,15 +155,7 @@ pub fn run_drm_backend() {
         .handle()
         .insert_source(libinput_backend, move |event, _, data| {
             let _dh = data.state.backend_data.display_handle.clone();
-            match event {
-                InputEvent::PointerButton { .. } => {
-                    data.state.running.store(false, Ordering::SeqCst);
-                }
-                InputEvent::Keyboard { .. } => {
-                    data.state.running.store(false, Ordering::SeqCst);
-                }
-                _ => {}
-            }
+            handle_input(&event, data);
         })
         .unwrap();
 
@@ -185,6 +179,18 @@ pub fn run_drm_backend() {
 
     let mut baton = None;
 
+    event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
+        if let Event::Msg(baton) = baton {
+            data.baton = Some(baton);
+        }
+        if data.state.next_vblank_scheduled {
+            return;
+        }
+        if let Some(baton) = data.baton.take() {
+            data.state.flutter_engine.on_vsync(baton).unwrap();
+        }
+    }).unwrap();
+
     event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
         let gpu_data = data.state.backend_data.get_gpu_data_mut();
         let slot = gpu_data.swapchain.acquire().ok().flatten().unwrap();
@@ -194,39 +200,8 @@ pub fn run_drm_backend() {
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
-        let primary_gpu = data.state.backend_data.primary_gpu;
-        let gpu_data = if let Some(gpu_data) = data.state.backend_data.gpus.get_mut(&primary_gpu) {
-            gpu_data
-        } else {
-            return;
-        };
-
-        let (gles_renderer, surface, current_slot, swapchain) = (
-            &mut gpu_data.gles_renderer,
-            if let Some(surface) = gpu_data.surfaces.values_mut().next() {
-                surface
-            } else {
-                return;
-            },
-            &mut gpu_data.current_slot,
-            &mut gpu_data.swapchain,
-        );
-
-        let slot = current_slot.take().unwrap();
-        let texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
-
-        let texture_buffer = TextureBuffer::from_texture(gles_renderer, texture, 1, Transform::Flipped180, None);
-        let texture_render_element = TextureRenderElement::from_texture_buffer(
-            Point::from((0.0, 0.0)),
-            &texture_buffer,
-            None,
-            None,
-            None,
-            Kind::Unspecified,
-        );
-        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[texture_render_element], [0.0, 0.0, 0.0, 0.0]).unwrap();
-        surface.compositor.queue_frame(None).unwrap();
-        swapchain.submitted(&slot);
+        render_flutter_frame(&mut data.state.backend_data);
+        data.state.next_vblank_scheduled = true;
     }).unwrap();
 
     while state.running.load(Ordering::SeqCst) {
@@ -253,6 +228,49 @@ pub fn run_drm_backend() {
 
     // Avoid indefinite hang in the Flutter render thread waiting for new rbo.
     drop(tx_fbo);
+}
+
+fn render_flutter_frame(backend_data: &mut DrmBackend) {
+    let primary_gpu = backend_data.primary_gpu;
+    let gpu_data = if let Some(gpu_data) = backend_data.gpus.get_mut(&primary_gpu) {
+        gpu_data
+    } else {
+        return;
+    };
+
+    let (gles_renderer, surface, current_slot, swapchain) = (
+        &mut gpu_data.gles_renderer,
+        if let Some(surface) = gpu_data.surfaces.values_mut().next() {
+            surface
+        } else {
+            return;
+        },
+        &mut gpu_data.current_slot,
+        &mut gpu_data.swapchain,
+    );
+
+    let slot = if let Some(slot) = current_slot.as_mut() {
+        slot
+    } else {
+        // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
+        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
+        surface.compositor.queue_frame(None).unwrap();
+        return;
+    };
+
+    let texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
+    let texture_buffer = TextureBuffer::from_texture(gles_renderer, texture, 1, Transform::Flipped180, None);
+    let texture_render_element = TextureRenderElement::from_texture_buffer(
+        Point::from((0.0, 0.0)),
+        &texture_buffer,
+        None,
+        None,
+        None,
+        Kind::Unspecified,
+    );
+    surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[texture_render_element], [0.0, 0.0, 0.0, 0.0]).unwrap();
+    surface.compositor.queue_frame(None).unwrap();
+    swapchain.submitted(slot);
 }
 
 pub struct DrmBackend {
@@ -326,12 +344,12 @@ impl GlobalState<DrmBackend> {
                 notifier,
                 move |event, _metadata, data: &mut CalloopData<_>| match event {
                     DrmEvent::VBlank(crtc) => {
+                        data.state.next_vblank_scheduled = false;
                         if let Some(surface) = data.state.backend_data.gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
                             let _ = surface.compositor.frame_submitted();
                         }
                         if let Some(baton) = data.baton.take() {
                             data.state.flutter_engine.on_vsync(baton).unwrap();
-                            data.baton = None;
                         }
                     }
                     DrmEvent::Error(error) => {
@@ -515,7 +533,7 @@ impl GlobalState<DrmBackend> {
             .render_frame::<_, TextureRenderElement<_>, GlesTexture>(
                 &mut device.gles_renderer,
                 &[],
-                [0.8, 0.8, 0.9, 1.0])
+                [0.0, 0.0, 0.0, 0.0])
             .unwrap();
         surface.compositor.queue_frame(None).unwrap();
         surface.compositor.reset_buffers();

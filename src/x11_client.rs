@@ -39,12 +39,11 @@ use smithay::{
         shm::ShmState,
     },
 };
+use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 
-use crate::{GlobalState, Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}};
-use crate::x11_client::input_handling::handle_input;
-
-mod input_handling;
+use crate::{Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, GlobalState};
+use crate::input_handling::handle_input;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
@@ -124,10 +123,10 @@ pub fn run_x11_client() {
 
     let EmbedderChannels {
         rx_present,
-        rx_request_fbo: rx_request_rbo,
+        rx_request_fbo,
         mut tx_fbo,
         tx_output_height,
-        rx_baton: _,
+        rx_baton,
     } = flutter_engine.run(&egl_context).unwrap();
 
     let size = window.size();
@@ -141,7 +140,6 @@ pub fn run_x11_client() {
             loop_handle: event_loop.handle(),
             backend_data: X11Data {
                 x11_surface,
-                // renderer,
                 mode: Mode {
                     size: {
                         let s = window.size();
@@ -150,10 +148,10 @@ pub fn run_x11_client() {
                     refresh: 144_000,
                 },
             },
-            // flutter_engine,
             flutter_engine,
             mouse_button_tracker: Default::default(),
             mouse_position: Default::default(),
+            next_vblank_scheduled: false,
             compositor_state: CompositorState::new::<GlobalState<X11Data>>(&display_handle),
             xdg_shell_state: XdgShellState::new::<GlobalState<X11Data>>(&display_handle),
             shm_state: ShmState::new::<GlobalState<X11Data>>(&display_handle, vec![]),
@@ -187,17 +185,32 @@ pub fn run_x11_client() {
                 data.state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
+                data.state.next_vblank_scheduled = false;
                 if let Some(baton) = data.baton.take() {
                     data.state.flutter_engine.on_vsync(baton).unwrap();
-                    data.baton = None;
                 }
-                // TODO
             }
             X11Event::Input(event) => handle_input(&event, data),
         })
         .expect("Failed to insert X11 Backend into event loop");
 
-    event_loop.handle().insert_source(rx_request_rbo, move |_, _, data| {
+    event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
+        if let Event::Msg(baton) = baton {
+            data.baton = Some(baton);
+        }
+        if data.state.next_vblank_scheduled {
+            return;
+        }
+        if let Some(baton) = data.baton.take() {
+            data.state.flutter_engine.on_vsync(baton).unwrap();
+        }
+        // if let Err(err) = data.state.backend_data.x11_surface.submit() {
+        //     data.state.backend_data.x11_surface.reset_buffers();
+        //     warn!("Failed to submit buffer: {}. Retrying", err);
+        // };
+    }).unwrap();
+
+    event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
         match data.state.backend_data.x11_surface.buffer() {
             Ok((dmabuf, _age)) => {
                 let _ = data.tx_fbo.send(Some(dmabuf));
@@ -210,6 +223,7 @@ pub fn run_x11_client() {
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
+        data.state.next_vblank_scheduled = true;
         if let Err(err) = data.state.backend_data.x11_surface.submit() {
             data.state.backend_data.x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);
@@ -238,7 +252,7 @@ pub fn run_x11_client() {
         }
     }
 
-    // Avoid indefinite hang in the Flutter render thread waiting for new rbo.
+    // Avoid indefinite hang in the Flutter render thread waiting for new fbo.
     drop(tx_fbo);
 }
 

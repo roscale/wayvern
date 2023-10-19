@@ -43,6 +43,7 @@ use crate::{
         },
     },
 };
+use crate::flutter_engine::callbacks::vsync_callback;
 use crate::flutter_engine::embedder::{FlutterEngineSendPointerEvent, FlutterPointerEvent};
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 
@@ -67,23 +68,23 @@ impl Default for FlutterEngine {
 impl FlutterEngine {
     pub fn run(&mut self, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
-        let (tx_request_rbo, rx_request_rbo) = channel::channel::<()>();
-        let (tx_rbo, rx_rbo) = channel::channel::<Option<Dmabuf>>();
+        let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
+        let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
         let (tx_output_height, rx_output_height) = channel::channel::<u16>();
         let (tx_baton, rx_baton) = channel::channel::<Baton>();
 
         let flutter_engine_channels = FlutterEngineChannels {
             tx_present,
-            tx_request_rbo,
-            rx_rbo,
+            tx_request_fbo,
+            rx_fbo,
             rx_output_height,
             tx_baton,
         };
 
         let embedder_channels = EmbedderChannels {
             rx_present,
-            rx_request_fbo: rx_request_rbo,
-            tx_fbo: tx_rbo,
+            rx_request_fbo,
+            tx_fbo,
             tx_output_height,
             rx_baton,
         };
@@ -125,8 +126,7 @@ impl FlutterEngine {
             update_semantics_custom_action_callback: None,
             persistent_cache_path: null(),
             is_persistent_cache_read_only: false,
-            vsync_callback: None,
-            // vsync_callback: Some(vsync_callback),
+            vsync_callback: Some(vsync_callback),
             custom_dart_entrypoint: null(),
             custom_task_runners: null(),
             shutdown_dart_vm_when_done: true,
@@ -288,8 +288,8 @@ impl FlutterEngineData {
 
 pub struct FlutterEngineChannels {
     pub tx_present: channel::Sender<()>,
-    pub tx_request_rbo: channel::Sender<()>,
-    pub rx_rbo: channel::Channel<Option<Dmabuf>>,
+    pub tx_request_fbo: channel::Sender<()>,
+    pub rx_fbo: channel::Channel<Option<Dmabuf>>,
     pub rx_output_height: channel::Channel<u16>,
     pub tx_baton: channel::Sender<Baton>,
 }

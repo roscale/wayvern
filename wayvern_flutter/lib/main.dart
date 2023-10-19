@@ -121,6 +121,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     subtitle: Text('Subtitle $i'),
                     leading: const Icon(Icons.favorite),
                     trailing: const Icon(Icons.more_vert),
+                    onTap: () {},
                   ),
               ],
             ))

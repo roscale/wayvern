@@ -1,41 +1,25 @@
 use std::mem::size_of;
+use std::sync::atomic::Ordering;
+
 use smithay::backend::input;
-use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputEvent, PointerAxisEvent, PointerButtonEvent};
-use smithay::backend::x11::X11Input;
-use crate::CalloopData;
+use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
+
+use crate::{Backend, CalloopData};
 use crate::flutter_engine::embedder::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, FlutterPointerEvent, FlutterPointerPhase_kDown, FlutterPointerPhase_kHover, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp, FlutterPointerSignalKind_kFlutterPointerSignalKindNone, FlutterPointerSignalKind_kFlutterPointerSignalKindScroll};
 use crate::flutter_engine::FlutterEngine;
-use crate::x11_client::X11Data;
 
-pub fn handle_input(event: &InputEvent<X11Input>, data: &mut CalloopData<X11Data>) {
+pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopData<impl Backend>) {
     match event {
         InputEvent::DeviceAdded { .. } => {}
         InputEvent::DeviceRemoved { .. } => {}
-        InputEvent::PointerMotion { .. } => {}
+        InputEvent::PointerMotion { event } => {
+            data.state.mouse_position.0 += event.delta_x();
+            data.state.mouse_position.1 += event.delta_y();
+            send_motion_event(data);
+        }
         InputEvent::PointerMotionAbsolute { event } => {
             data.state.mouse_position = (event.x(), event.y());
-
-            data.state.flutter_engine.send_pointer_event(FlutterPointerEvent {
-                struct_size: size_of::<FlutterPointerEvent>(),
-                phase: if data.state.mouse_button_tracker.are_any_buttons_pressed() {
-                    FlutterPointerPhase_kMove
-                } else {
-                    FlutterPointerPhase_kHover
-                },
-                timestamp: FlutterEngine::current_time_ms() as usize,
-                x: data.state.mouse_position.0,
-                y: data.state.mouse_position.1,
-                device: 0,
-                signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindNone,
-                scroll_delta_x: 0.0,
-                scroll_delta_y: 0.0,
-                device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
-                buttons: data.state.mouse_button_tracker.get_flutter_button_bitmask(),
-                pan_x: 0.0,
-                pan_y: 0.0,
-                scale: 0.0,
-                rotation: 0.0,
-            }).unwrap();
+            send_motion_event(data);
         }
         InputEvent::PointerButton { event } => {
             event.state();
@@ -88,8 +72,8 @@ pub fn handle_input(event: &InputEvent<X11Input>, data: &mut CalloopData<X11Data
                 y: data.state.mouse_position.1,
                 device: 0,
                 signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindScroll,
-                scroll_delta_x: event.amount_discrete(input::Axis::Horizontal).unwrap() * 10.0,
-                scroll_delta_y: event.amount_discrete(input::Axis::Vertical).unwrap() * 10.0,
+                scroll_delta_x: event.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 10.0,
+                scroll_delta_y: event.amount_discrete(input::Axis::Vertical).unwrap_or(0.0) * 10.0,
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
                 buttons: data.state.mouse_button_tracker.get_flutter_button_bitmask(),
                 pan_x: 0.0,
@@ -98,7 +82,9 @@ pub fn handle_input(event: &InputEvent<X11Input>, data: &mut CalloopData<X11Data
                 rotation: 0.0,
             }).unwrap();
         }
-        InputEvent::Keyboard { .. } => {}
+        InputEvent::Keyboard { .. } => {
+            data.state.running.store(false, Ordering::SeqCst);
+        }
         InputEvent::GestureSwipeBegin { .. } => {}
         InputEvent::GestureSwipeUpdate { .. } => {}
         InputEvent::GestureSwipeEnd { .. } => {}
@@ -118,4 +104,28 @@ pub fn handle_input(event: &InputEvent<X11Input>, data: &mut CalloopData<X11Data
         InputEvent::TabletToolButton { .. } => {}
         InputEvent::Special(_) => {}
     }
+}
+
+fn send_motion_event(data: &mut CalloopData<impl Backend>) {
+    data.state.flutter_engine.send_pointer_event(FlutterPointerEvent {
+        struct_size: size_of::<FlutterPointerEvent>(),
+        phase: if data.state.mouse_button_tracker.are_any_buttons_pressed() {
+            FlutterPointerPhase_kMove
+        } else {
+            FlutterPointerPhase_kHover
+        },
+        timestamp: FlutterEngine::current_time_ms() as usize,
+        x: data.state.mouse_position.0,
+        y: data.state.mouse_position.1,
+        device: 0,
+        signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindNone,
+        scroll_delta_x: 0.0,
+        scroll_delta_y: 0.0,
+        device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
+        buttons: data.state.mouse_button_tracker.get_flutter_button_bitmask(),
+        pan_x: 0.0,
+        pan_y: 0.0,
+        scale: 0.0,
+        rotation: 0.0,
+    }).unwrap();
 }

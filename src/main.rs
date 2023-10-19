@@ -48,6 +48,7 @@ mod x11_client;
 mod gles_framebuffer_importer;
 mod mouse_button_tracker;
 mod drm_backend;
+mod input_handling;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -133,6 +134,7 @@ pub struct GlobalState<BackendData: Backend + 'static> {
     pub flutter_engine: FlutterEngine,
     pub mouse_button_tracker: MouseButtonTracker,
     pub mouse_position: (f64, f64),
+    pub next_vblank_scheduled: bool,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
