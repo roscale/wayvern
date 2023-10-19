@@ -1,9 +1,7 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::AtomicBool,
-    },
-};
+use std::{env, sync::{
+    Arc,
+    atomic::AtomicBool,
+}};
 
 use smithay::{
     backend::{
@@ -40,9 +38,6 @@ use smithay::{
         shm::{ShmHandler, ShmState},
     },
 };
-use smithay::backend::allocator::{Allocator, Swapchain};
-use smithay::backend::allocator::dmabuf::AnyError;
-use smithay::desktop::Space;
 use smithay::reexports::calloop::{channel, LoopHandle};
 
 use crate::flutter_engine::FlutterEngine;
@@ -54,13 +49,6 @@ mod gles_framebuffer_importer;
 mod mouse_button_tracker;
 mod drm_backend;
 
-pub struct CalloopData<BackendData: Backend + 'static> {
-    pub state: App<BackendData>,
-    pub display_handle: DisplayHandle,
-    pub tx_fbo: channel::Sender<Option<Dmabuf>>,
-    pub baton: Option<flutter_engine::Baton>,
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
         tracing_subscriber::fmt().with_env_filter(env_filter).init();
@@ -68,16 +56,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing_subscriber::fmt().init();
     }
 
-    drm_backend::run_drm_backend();
-    // x11_client::run_x11_client();
+    if env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok() {
+        x11_client::run_x11_client();
+    } else {
+        drm_backend::run_drm_backend();
+    }
+
     Ok(())
 }
 
-impl<BackendData: Backend> BufferHandler for App<BackendData> {
+impl<BackendData: Backend> BufferHandler for GlobalState<BackendData> {
     fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
-impl<BackendData: Backend> XdgShellHandler for App<BackendData> {
+impl<BackendData: Backend> XdgShellHandler for GlobalState<BackendData> {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
     }
@@ -98,7 +90,7 @@ impl<BackendData: Backend> XdgShellHandler for App<BackendData> {
     }
 }
 
-impl<BackendData: Backend> CompositorHandler for App<BackendData> {
+impl<BackendData: Backend> CompositorHandler for GlobalState<BackendData> {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
     }
@@ -112,13 +104,13 @@ impl<BackendData: Backend> CompositorHandler for App<BackendData> {
     }
 }
 
-impl<BackendData: Backend> ShmHandler for App<BackendData> {
+impl<BackendData: Backend> ShmHandler for GlobalState<BackendData> {
     fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
 
-impl<BackendData: Backend> DmabufHandler for App<BackendData> {
+impl<BackendData: Backend> DmabufHandler for GlobalState<BackendData> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         todo!()
     }
@@ -128,7 +120,10 @@ impl<BackendData: Backend> DmabufHandler for App<BackendData> {
     }
 }
 
-pub struct App<BackendData: Backend + 'static> {
+
+pub trait Backend {}
+
+pub struct GlobalState<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
@@ -144,7 +139,11 @@ pub struct App<BackendData: Backend + 'static> {
     pub shm_state: ShmState,
 }
 
-pub trait Backend {}
+pub struct CalloopData<BackendData: Backend + 'static> {
+    pub state: GlobalState<BackendData>,
+    pub tx_fbo: channel::Sender<Option<Dmabuf>>,
+    pub baton: Option<flutter_engine::Baton>,
+}
 
 pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
@@ -183,11 +182,11 @@ impl ClientData for ClientState {
 }
 
 // Macros used to delegate protocol handling to types in the app state.
-delegate_xdg_shell!(@<BackendData: Backend + 'static> App<BackendData>);
-delegate_compositor!(@<BackendData: Backend + 'static> App<BackendData>);
-delegate_shm!(@<BackendData: Backend + 'static> App<BackendData>);
-delegate_dmabuf!(@<BackendData: Backend + 'static> App<BackendData>);
-delegate_output!(@<BackendData: Backend + 'static> App<BackendData>);
+delegate_xdg_shell!(@<BackendData: Backend + 'static> GlobalState<BackendData>);
+delegate_compositor!(@<BackendData: Backend + 'static> GlobalState<BackendData>);
+delegate_shm!(@<BackendData: Backend + 'static> GlobalState<BackendData>);
+delegate_dmabuf!(@<BackendData: Backend + 'static> GlobalState<BackendData>);
+delegate_output!(@<BackendData: Backend + 'static> GlobalState<BackendData>);
 
 // delegate_seat!(App);
 // delegate_data_device!(App);

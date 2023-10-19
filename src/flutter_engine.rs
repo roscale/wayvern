@@ -58,11 +58,13 @@ pub struct FlutterEngine(FlutterEngineInternal, *mut FlutterEngineData);
 /// with the same baton, which will most probably segfault.
 pub struct Baton(isize);
 
-impl FlutterEngine {
-    pub fn new() -> Self {
+impl Default for FlutterEngine {
+    fn default() -> Self {
         Self(null_mut(), null_mut())
     }
+}
 
+impl FlutterEngine {
     pub fn run(&mut self, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_rbo, rx_request_rbo) = channel::channel::<()>();
@@ -237,8 +239,12 @@ impl FlutterEngine {
 
 impl Drop for FlutterEngine {
     fn drop(&mut self) {
-        let _ = unsafe { FlutterEngineShutdown(self.0) };
-        let _ = unsafe { Box::from_raw(self.1) };
+        if !self.0.is_null() {
+            let _ = unsafe { FlutterEngineShutdown(self.0) };
+        }
+        if !self.1.is_null() {
+            let _ = unsafe { Box::from_raw(self.1) };
+        }
     }
 }
 

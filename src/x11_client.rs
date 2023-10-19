@@ -39,20 +39,16 @@ use smithay::{
         shm::ShmState,
     },
 };
-use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::reexports::calloop::channel;
-use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 
-use crate::{App, Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, flutter_engine};
+use crate::{GlobalState, Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}};
 use crate::x11_client::input_handling::handle_input;
 
 mod input_handling;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display: Display<App<X11Data>> = Display::new().unwrap();
+    let display: Display<GlobalState<X11Data>> = Display::new().unwrap();
     let mut display_handle = display.handle();
 
     let x11_backend = x11::X11Backend::new().expect("Failed to initilize X11 backend");
@@ -124,12 +120,12 @@ pub fn run_x11_client() {
         },
     };
 
-    let mut flutter_engine = FlutterEngine::new();
+    let mut flutter_engine = FlutterEngine::default();
 
     let EmbedderChannels {
         rx_present,
         rx_request_fbo: rx_request_rbo,
-        tx_fbo: mut tx_rbo,
+        mut tx_fbo,
         tx_output_height,
         rx_baton: _,
     } = flutter_engine.run(&egl_context).unwrap();
@@ -139,7 +135,7 @@ pub fn run_x11_client() {
     flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     let mut state = {
-        App {
+        GlobalState {
             running: Arc::new(AtomicBool::new(true)),
             display_handle: display_handle.clone(),
             loop_handle: event_loop.handle(),
@@ -158,9 +154,9 @@ pub fn run_x11_client() {
             flutter_engine,
             mouse_button_tracker: Default::default(),
             mouse_position: Default::default(),
-            compositor_state: CompositorState::new::<App<X11Data>>(&display_handle),
-            xdg_shell_state: XdgShellState::new::<App<X11Data>>(&display_handle),
-            shm_state: ShmState::new::<App<X11Data>>(&display_handle, vec![]),
+            compositor_state: CompositorState::new::<GlobalState<X11Data>>(&display_handle),
+            xdg_shell_state: XdgShellState::new::<GlobalState<X11Data>>(&display_handle),
+            shm_state: ShmState::new::<GlobalState<X11Data>>(&display_handle, vec![]),
         }
     };
 
@@ -223,8 +219,7 @@ pub fn run_x11_client() {
     while state.running.load(Ordering::SeqCst) {
         let mut calloop_data = CalloopData {
             state,
-            display_handle,
-            tx_fbo: tx_rbo,
+            tx_fbo,
             baton,
         };
 
@@ -232,8 +227,7 @@ pub fn run_x11_client() {
 
         CalloopData {
             state,
-            display_handle,
-            tx_fbo: tx_rbo,
+            tx_fbo,
             baton,
         } = calloop_data;
 
@@ -245,7 +239,7 @@ pub fn run_x11_client() {
     }
 
     // Avoid indefinite hang in the Flutter render thread waiting for new rbo.
-    drop(tx_rbo);
+    drop(tx_fbo);
 }
 
 pub struct X11Data {
