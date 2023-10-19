@@ -95,7 +95,7 @@ pub fn run_drm_backend() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let udev_backend = match UdevBackend::new(&session.seat()) {
+    let udev_backend = match UdevBackend::new(session.seat()) {
         Ok(ret) => ret,
         Err(err) => {
             error!(error = ?err, "Failed to initialize udev backend");
@@ -361,7 +361,7 @@ impl GlobalState<DrmBackend> {
                 Box::new(DmabufAllocator(gbm_allocator))
             };
             let modifiers = gles_renderer.egl_context().dmabuf_texture_formats().iter().map(|format| format.modifier).collect::<Vec<_>>();
-            Swapchain::new(dmabuf_allocator, 2560, 1440, Fourcc::Argb8888, modifiers)
+            Swapchain::new(dmabuf_allocator, 0, 0, Fourcc::Argb8888, modifiers)
         };
 
         self.backend_data.gpus.insert(
@@ -522,6 +522,7 @@ impl GlobalState<DrmBackend> {
 
         device.surfaces.insert(crtc, surface);
 
+        device.swapchain.resize(wl_mode.size.w as u32, wl_mode.size.h as u32);
         self.flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
     }
 
