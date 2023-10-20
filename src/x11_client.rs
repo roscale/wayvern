@@ -41,6 +41,7 @@ use smithay::{
 };
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::wayland_server::protocol::wl_shm;
+use smithay::utils::Clock;
 
 use crate::{Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, GlobalState};
 use crate::input_handling::handle_input;
@@ -138,6 +139,7 @@ pub fn run_x11_client() {
             running: Arc::new(AtomicBool::new(true)),
             display_handle: display_handle.clone(),
             loop_handle: event_loop.handle(),
+            clock: Clock::new().expect("failed to initialize clock"),
             backend_data: X11Data {
                 x11_surface,
                 mode: Mode {

@@ -39,6 +39,7 @@ use smithay::{
     },
 };
 use smithay::reexports::calloop::{channel, LoopHandle};
+use smithay::utils::{Clock, Monotonic};
 
 use crate::flutter_engine::FlutterEngine;
 use crate::mouse_button_tracker::MouseButtonTracker;
@@ -49,6 +50,7 @@ mod gles_framebuffer_importer;
 mod mouse_button_tracker;
 mod drm_backend;
 mod input_handling;
+mod cursor;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -128,6 +130,7 @@ pub struct GlobalState<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
+    pub clock: Clock<Monotonic>,
     pub backend_data: BackendData,
     // space: Space<WindowElement>,
 

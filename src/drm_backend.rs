@@ -1,57 +1,73 @@
 use std::collections::HashMap;
+use std::default::Default;
 use std::os::fd::FromRawFd;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use smithay::{
-    backend::allocator::gbm::GbmAllocator,
-    output::Mode,
-    reexports::{
-        calloop::EventLoop,
-        gbm::BufferObjectFlags as GbmBufferFlags,
-        wayland_server::Display,
-    },
-    wayland::{
-        compositor::CompositorState,
-        shell::xdg::XdgShellState,
-        shm::ShmState,
-    },
-};
 use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
+use smithay::backend::allocator::gbm::GbmAllocator;
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::{CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmNode, NodeType};
 use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::egl;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::ImportDma;
 use smithay::backend::session::{libseat, Session};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Output, PhysicalProperties, Subpixel};
+use smithay::output::Mode;
 use smithay::reexports::calloop::channel::Event;
+use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags, OFlag};
 use smithay::reexports::drm::Device as _;
+use smithay::reexports::gbm::BufferObjectFlags as GbmBufferFlags;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::wayland_server::backend::GlobalId;
+use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{DeviceFd, Point, Transform};
+use smithay::utils::{Clock, DeviceFd, Point, Transform};
+use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::drm_lease::DrmLease;
+use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shm::ShmState;
 use tracing::{error, info, warn};
 
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
-use crate::{Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, GlobalState};
+use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, GlobalState};
 use crate::input_handling::handle_input;
+
+pub struct DrmBackend {
+    pub session: LibSeatSession,
+    display_handle: DisplayHandle,
+    gpus: HashMap<DrmNode, GpuData>,
+    primary_gpu: DrmNode,
+    pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<GlesTexture>)>,
+    pointer_image: crate::cursor::Cursor,
+}
+
+impl Backend for DrmBackend {}
+
+impl DrmBackend {
+    fn get_gpu_data(&self) -> &GpuData {
+        self.gpus.get(&self.primary_gpu).unwrap()
+    }
+
+    fn get_gpu_data_mut(&mut self) -> &mut GpuData {
+        self.gpus.get_mut(&self.primary_gpu).unwrap()
+    }
+}
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
 // - we do not want something like Abgr4444, which looses color information, if something better is available
@@ -114,13 +130,16 @@ pub fn run_drm_backend() {
         running: Arc::new(AtomicBool::new(true)),
         display_handle: display.handle(),
         loop_handle: event_loop.handle(),
+        clock: Clock::new().expect("failed to initialize clock"),
         backend_data: DrmBackend {
             session,
             display_handle: display.handle(),
             gpus: HashMap::new(),
             primary_gpu,
+            pointer_images: vec![],
+            pointer_image: crate::cursor::Cursor::load(),
         },
-        flutter_engine: FlutterEngine::default(),
+        flutter_engine: Default::default(),
         mouse_button_tracker: Default::default(),
         mouse_position: Default::default(),
         next_vblank_scheduled: false,
@@ -200,7 +219,7 @@ pub fn run_drm_backend() {
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
-        render_flutter_frame(&mut data.state.backend_data);
+        render_flutter_frame(&mut data.state);
         data.state.next_vblank_scheduled = true;
     }).unwrap();
 
@@ -230,9 +249,9 @@ pub fn run_drm_backend() {
     drop(tx_fbo);
 }
 
-fn render_flutter_frame(backend_data: &mut DrmBackend) {
-    let primary_gpu = backend_data.primary_gpu;
-    let gpu_data = if let Some(gpu_data) = backend_data.gpus.get_mut(&primary_gpu) {
+fn render_flutter_frame(state: &mut GlobalState<DrmBackend>) {
+    let primary_gpu = state.backend_data.primary_gpu;
+    let gpu_data = if let Some(gpu_data) = state.backend_data.gpus.get_mut(&primary_gpu) {
         gpu_data
     } else {
         return;
@@ -258,38 +277,64 @@ fn render_flutter_frame(backend_data: &mut DrmBackend) {
         return;
     };
 
-    let texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
-    let texture_buffer = TextureBuffer::from_texture(gles_renderer, texture, 1, Transform::Flipped180, None);
-    let texture_render_element = TextureRenderElement::from_texture_buffer(
+    let flutter_texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
+    let flutter_texture_buffer = TextureBuffer::from_texture(gles_renderer, flutter_texture, 1, Transform::Flipped180, None);
+    let flutter_texture_element = TextureRenderElement::from_texture_buffer(
         Point::from((0.0, 0.0)),
-        &texture_buffer,
+        &flutter_texture_buffer,
         None,
         None,
         None,
         Kind::Unspecified,
     );
-    surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[texture_render_element], [0.0, 0.0, 0.0, 0.0]).unwrap();
+
+    let frame = state.backend_data
+        .pointer_image
+        .get_image(1, state.clock.now().try_into().unwrap());
+
+    let cursor_position = Point::from(state.mouse_position) - Point::from((frame.xhot as f64, frame.yhot as f64));
+
+    let pointer_images = &mut state.backend_data.pointer_images;
+    let pointer_image = pointer_images
+        .iter()
+        .find_map(|(image, texture)| {
+            if image == &frame {
+                Some(texture.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            let texture = TextureBuffer::from_memory(
+                gles_renderer,
+                &frame.pixels_rgba,
+                Fourcc::Abgr8888,
+                (frame.width as i32, frame.height as i32),
+                false,
+                1,
+                Transform::Normal,
+                None,
+            ).expect("Failed to import cursor bitmap");
+            pointer_images.push((frame, texture.clone()));
+            texture
+        });
+
+    let cursor_element = TextureRenderElement::from_texture_buffer(
+        cursor_position,
+        &pointer_image,
+        None,
+        None,
+        None,
+        Kind::Cursor,
+    );
+
+    surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(
+        gles_renderer,
+        &[flutter_texture_element, cursor_element],
+        [0.0, 0.0, 0.0, 0.0],
+    ).unwrap();
     surface.compositor.queue_frame(None).unwrap();
     swapchain.submitted(slot);
-}
-
-pub struct DrmBackend {
-    pub session: LibSeatSession,
-    display_handle: DisplayHandle,
-    gpus: HashMap<DrmNode, GpuData>,
-    primary_gpu: DrmNode,
-}
-
-impl Backend for DrmBackend {}
-
-impl DrmBackend {
-    fn get_gpu_data(&self) -> &GpuData {
-        self.gpus.get(&self.primary_gpu).unwrap()
-    }
-
-    fn get_gpu_data_mut(&mut self) -> &mut GpuData {
-        self.gpus.get_mut(&self.primary_gpu).unwrap()
-    }
 }
 
 #[allow(dead_code)]
