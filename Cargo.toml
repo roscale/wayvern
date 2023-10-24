@@ -18,6 +18,8 @@ tracing = { version = "0.1.37", features = [] }
 profiling = "1.0.11"
 thiserror = "1.0.49"
 xcursor = "0.3.4"
+serde = "1.0.189"
+serde_json = "1.0.107"
 
 [build-dependencies]
 bindgen = "0.68.1"
