@@ -9,7 +9,6 @@ pub mod message_codec;
 pub mod json_message_codec;
 pub mod json_method_codec;
 pub mod binary_messenger_impl;
-pub mod flutter_messenger;
 pub mod byte_streams;
 pub mod standard_codec_serializer;
 pub mod standard_message_codec;

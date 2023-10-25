@@ -60,7 +60,7 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
         let codec = self.codec.clone();
         let channel_name = self.name.clone();
 
-        let binary_handler: BinaryMessageHandler = Some(Rc::new(move |message: &[u8], reply: BinaryReply| {
+        let binary_handler: BinaryMessageHandler = Some(Box::new(move |message: &[u8], reply: BinaryReply| {
             let mut result = EngineMethodResult::new(reply, codec.clone());
             let method_call = codec.decode_method_call(message);
             if let Some(method_call) = method_call {

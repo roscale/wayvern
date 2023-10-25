@@ -29,7 +29,7 @@ use crate::{
         },
         embedder::{
             FLUTTER_ENGINE_VERSION,
-            FlutterEngine as FlutterEngineInternal,
+            FlutterEngine as FlutterEngineHandle,
             FlutterEngineGetCurrentTime,
             FlutterEngineOnVsync,
             FlutterEngineRun,
@@ -54,7 +54,7 @@ mod platform_channels;
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
 /// - Send is not implemented because all its methods must be called from the thread the engine was created.
-pub struct FlutterEngine(FlutterEngineInternal, *mut FlutterEngineData);
+pub struct FlutterEngine(FlutterEngineHandle, *mut FlutterEngineData);
 
 /// I don't want people to clone it because it's UB to call [FlutterEngine::on_vsync] multiple times
 /// with the same baton, which will most probably segfault.
@@ -168,7 +168,7 @@ impl FlutterEngine {
             },
         };
 
-        let mut flutter_engine: FlutterEngineInternal = null_mut();
+        let mut flutter_engine: FlutterEngineHandle = null_mut();
         let result = unsafe {
             FlutterEngineRun(
                 FLUTTER_ENGINE_VERSION as usize,

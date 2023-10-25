@@ -1,80 +1,102 @@
-use std::any::Any;
 use std::collections::HashMap;
-use std::rc::Rc;
-use crate::flutter_engine::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
-use crate::flutter_engine::platform_channels::flutter_messenger::{FlutterDesktopMessage, FlutterDesktopMessageCallback, FlutterDesktopMessenger, FlutterDesktopMessengerRef};
+use std::ffi::CString;
+use std::ptr::{null, null_mut};
 
-struct BinaryMessengerImpl {
-    messenger: Rc<dyn FlutterDesktopMessenger>,
+use crate::flutter_engine::embedder::{FlutterDataCallback, FlutterEngine as FlutterEngineHandle, FlutterEngineResult_kSuccess, FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse, FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle, FlutterPlatformMessageReleaseResponseHandle};
+use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
+
+struct BinaryMessengerImpl<'a> {
+    flutter_engine: &'a mut FlutterEngine,
     handlers: HashMap<String, BinaryMessageHandler>,
 }
 
-impl BinaryMessengerImpl {
-    pub fn new(messenger: Rc<dyn FlutterDesktopMessenger>) -> Self {
+impl<'a> BinaryMessengerImpl<'a> {
+    pub fn new(flutter_engine: &'a mut FlutterEngine) -> Self {
         Self {
-            messenger,
+            flutter_engine,
             handlers: HashMap::new(),
         }
     }
 }
 
-impl BinaryMessenger for BinaryMessengerImpl {
+struct Captures {
+    reply: BinaryReply,
+}
+
+extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut ::std::os::raw::c_void) {
+    let captures = unsafe { Box::from_raw(user_data as *mut Captures) };
+    let data = unsafe { std::slice::from_raw_parts(data, data_size) };
+    captures.reply.unwrap()(Some(data));
+}
+
+impl<'a> BinaryMessenger for BinaryMessengerImpl<'a> {
+
+    fn handle_message(&mut self, message: FlutterPlatformMessage) {
+        let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
+        let channel = channel.to_str().unwrap();
+        if let Some(handler) = self.handlers.get_mut(channel) {
+            let message_bytes = unsafe { std::slice::from_raw_parts(message.message, message.message_size) };
+
+            let response_handle = message.response_handle;
+            let engine_handle = self.flutter_engine.0;
+            let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<&[u8]>| {
+                let data = reply.map(|v| v.as_ptr()).unwrap_or(std::ptr::null());
+                let data_size = reply.map(|v| v.len()).unwrap_or(0);
+                unsafe { FlutterEngineSendPlatformMessageResponse(engine_handle, response_handle, data, data_size) };
+            }));
+            handler.as_mut().unwrap()(message_bytes, reply_handler);
+        } else {
+            unsafe { FlutterEngineSendPlatformMessageResponse(self.flutter_engine.0, message.response_handle, null(), 0) };
+        }
+    }
+
     fn send(&mut self, channel: &str, message: &[u8], reply: BinaryReply) {
         let channel = channel.to_string();
-        let reply: BinaryReply = if let Some(reply) = reply {
-            Some(reply)
+        if reply.is_some() {
+            let captures = Box::into_raw(Box::new(Captures {
+                reply,
+            }));
+            let result = send_message_with_reply(self.flutter_engine.0, &channel, message, Some(message_reply), captures as *mut ::std::os::raw::c_void);
+            if !result {
+                let _ = unsafe { Box::from_raw(captures) };
+            }
         } else {
-            Rc::get_mut(&mut self.messenger).unwrap().flutter_desktop_messenger_send(channel.as_str(), message);
-            return;
+            send_message_with_reply(self.flutter_engine.0, &channel, message, None, null_mut());
         };
-
-        let message_reply = move |data: Option<&[u8]>, user_data: Option<Box<dyn Any>>| {
-            let reply = user_data.unwrap().downcast::<BinaryReply>().unwrap().unwrap();
-            reply(data);
-        };
-        Rc::get_mut(&mut self.messenger).unwrap().flutter_desktop_messenger_send_with_reply(channel.as_str(), message, Box::new(message_reply), Some(Box::new(reply)));
     }
 
     fn set_message_handler(&mut self, channel: &str, handler: BinaryMessageHandler) {
-        let handler: BinaryMessageHandler = if let Some(handler) = handler {
-            Some(handler)
+        if handler.is_some() {
+            self.handlers.insert(channel.to_string(), handler);
         } else {
             self.handlers.remove(channel);
-            Rc::get_mut(&mut self.messenger).unwrap().flutter_desktop_messenger_set_callback(channel, None, None);
-            return;
         };
-
-        self.handlers.insert(channel.to_string(), handler);
-        let message_handler: BinaryMessageHandler = self.handlers[channel].as_ref().cloned();
-
-        let a = move |mut messenger: FlutterDesktopMessengerRef, message: &FlutterDesktopMessage, user_data: Option<Box<dyn Any>>| {
-            let response_handle = message.response_handle;
-            let reply_handler: BinaryReply = Some(Box::new(move |data: Option<&[u8]>| {
-                if response_handle.is_some() {
-                    Rc::get_mut(&mut messenger).unwrap().flutter_desktop_messenger_send_response(response_handle, data.unwrap());
-                } else {
-                    eprintln!("Error: Response can be set only once. Ignoring duplicate response.");
-                }
-            }));
-            let message_handler = user_data.unwrap().downcast::<BinaryMessageHandler>().unwrap();
-            Rc::get_mut(&mut message_handler.unwrap()).unwrap()(message.message, reply_handler);
-        };
-
-        let callback: FlutterDesktopMessageCallback = Some(Box::new(a));
-
-        Rc::get_mut(&mut self.messenger).unwrap().flutter_desktop_messenger_set_callback(channel, callback, Some(Box::new(message_handler)));
     }
 }
 
-// fn forward_to_handler(mut messenger: FlutterDesktopMessengerRef, mut message: &FlutterDesktopMessage, user_data: Option<Box<dyn Any>>) {
-//     let response_handle = message.response_handle;
-//     let reply_handler: BinaryReply = Some(Box::new(move |data: Option<&[u8]>| {
-//         if response_handle.is_some() {
-//             Rc::get_mut(&mut messenger).unwrap().flutter_desktop_messenger_send_response(response_handle, data.unwrap());
-//         } else {
-//             eprintln!("Error: Response can be set only once. Ignoring duplicate response.");
-//         }
-//     }));
-//     let message_handler = user_data.unwrap().downcast::<BinaryMessageHandler>().unwrap();
-//     Rc::get_mut(&mut message_handler.unwrap()).unwrap()(message.message, reply_handler);
-// }
+fn send_message_with_reply(flutter_engine: FlutterEngineHandle, channel: &str, message: &[u8], reply: FlutterDataCallback, user_data: *mut ::std::os::raw::c_void) -> bool {
+    let mut response_handle = null_mut();
+    if reply.is_some() && !user_data.is_null() {
+        let result = unsafe { FlutterPlatformMessageCreateResponseHandle(flutter_engine, reply, user_data, &mut response_handle) };
+        if result != FlutterEngineResult_kSuccess {
+            eprintln!("Failed to create response handle");
+            return false;
+        }
+    }
+
+    let channel_cstring = CString::new(channel).unwrap();
+    let platform_message = FlutterPlatformMessage {
+        struct_size: 0,
+        channel: channel_cstring.as_ptr(),
+        message: message.as_ptr(),
+        message_size: message.len(),
+        response_handle,
+    };
+
+    let message_result = unsafe { FlutterEngineSendPlatformMessage(flutter_engine, &platform_message) };
+    if !response_handle.is_null() {
+        unsafe { FlutterPlatformMessageReleaseResponseHandle(flutter_engine, response_handle) };
+    }
+    message_result == FlutterEngineResult_kSuccess
+}
