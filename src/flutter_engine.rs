@@ -50,6 +50,7 @@ use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 mod callbacks;
 pub mod embedder;
 mod platform_channels;
+mod task_runner;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
-use smithay::backend::allocator::gbm::GbmAllocator;
+use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::{CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmNode, NodeType};
 use smithay::backend::drm::compositor::DrmCompositor;
@@ -29,7 +29,6 @@ use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags, OFlag};
 use smithay::reexports::drm::Device as _;
-use smithay::reexports::gbm::BufferObjectFlags as GbmBufferFlags;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::reexports::wayland_server::Display;
