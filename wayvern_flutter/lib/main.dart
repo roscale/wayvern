@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  const platform = MethodChannel('test_channel');
+
+  platform.setMethodCallHandler((call) async {
+    if (call.method == 'test') {
+      print(call.arguments);
+    }
+  });
+
   runApp(const MyApp());
 }
 

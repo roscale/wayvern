@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::default::Default;
 use std::os::fd::FromRawFd;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
@@ -34,11 +32,8 @@ use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{Clock, DeviceFd, Point, Transform};
-use smithay::wayland::compositor::CompositorState;
+use smithay::utils::{DeviceFd, Point, Transform};
 use smithay::wayland::drm_lease::DrmLease;
-use smithay::wayland::shell::xdg::XdgShellState;
-use smithay::wayland::shm::ShmState;
 use tracing::{error, info, warn};
 
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
@@ -49,7 +44,6 @@ use crate::input_handling::handle_input;
 
 pub struct DrmBackend {
     pub session: LibSeatSession,
-    display_handle: DisplayHandle,
     gpus: HashMap<DrmNode, GpuData>,
     primary_gpu: DrmNode,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<GlesTexture>)>,
@@ -125,30 +119,22 @@ pub fn run_drm_backend() {
     libinput_context.udev_assign_seat(&session.seat()).unwrap();
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
-    let mut state = GlobalState {
-        running: Arc::new(AtomicBool::new(true)),
-        display_handle: display.handle(),
-        loop_handle: event_loop.handle(),
-        clock: Clock::new().expect("failed to initialize clock"),
-        backend_data: DrmBackend {
+    let mut state = GlobalState::new(
+        display,
+        event_loop.handle(),
+        DrmBackend {
             session,
-            display_handle: display.handle(),
             gpus: HashMap::new(),
             primary_gpu,
             pointer_images: vec![],
             pointer_image: crate::cursor::Cursor::load(),
         },
-        flutter_engine: Default::default(),
-        mouse_button_tracker: Default::default(),
-        mouse_position: Default::default(),
-        next_vblank_scheduled: false,
-        compositor_state: CompositorState::new::<GlobalState<DrmBackend>>(&display_handle),
-        xdg_shell_state: XdgShellState::new::<GlobalState<DrmBackend>>(&display_handle),
-        shm_state: ShmState::new::<GlobalState<DrmBackend>>(&display_handle, vec![]),
-    };
+    );
 
     // Initialize GPU state.
     state.gpu_added(primary_gpu, &primary_gpu.dev_path().unwrap()).unwrap();
+
+    let state_ptr = &mut state as *const _ as *mut _;
 
     // Start the Flutter engine.
     let EmbedderChannels {
@@ -157,7 +143,7 @@ pub fn run_drm_backend() {
         mut tx_fbo,
         tx_output_height: _,
         rx_baton,
-    } = state.flutter_engine.run(state.backend_data.get_gpu_data().gles_renderer.egl_context()).unwrap();
+    } = state.flutter_engine.run(state_ptr, state.backend_data.get_gpu_data().gles_renderer.egl_context()).unwrap();
 
     // Initialize already present connectors.
     state.device_changed(primary_gpu);
@@ -172,7 +158,7 @@ pub fn run_drm_backend() {
     event_loop
         .handle()
         .insert_source(libinput_backend, move |event, _, data| {
-            let _dh = data.state.backend_data.display_handle.clone();
+            let _dh = data.state.display_handle.clone();
             handle_input(&event, data);
         })
         .unwrap();

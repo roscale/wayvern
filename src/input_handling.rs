@@ -1,12 +1,18 @@
 use std::mem::size_of;
+use std::rc::Rc;
 use std::sync::atomic::Ordering;
+use input_linux::sys::KEY_ESC;
 
 use smithay::backend::input;
-use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
+use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyboardKeyEvent, KeyState, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
 
 use crate::{Backend, CalloopData};
 use crate::flutter_engine::embedder::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, FlutterPointerEvent, FlutterPointerPhase_kDown, FlutterPointerPhase_kHover, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp, FlutterPointerSignalKind_kFlutterPointerSignalKindNone, FlutterPointerSignalKind_kFlutterPointerSignalKindScroll};
 use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 
 pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopData<impl Backend>) {
     match event {
@@ -82,8 +88,27 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 rotation: 0.0,
             }).unwrap();
         }
-        InputEvent::Keyboard { .. } => {
-            data.state.running.store(false, Ordering::SeqCst);
+        InputEvent::Keyboard { event } => {
+            if event.state() != KeyState::Pressed {
+                return;
+            }
+
+            if event.key_code() == KEY_ESC as u32 {
+                data.state.running.store(false, Ordering::SeqCst);
+                return;
+            }
+
+            let mut messenger = BinaryMessengerImpl::new(data.state.flutter_engine.handle);
+            let codec = Rc::new(StandardMethodCodec::new());
+            let mut method_channel = MethodChannel::new(&mut messenger, "test_channel".to_string(), codec);
+            method_channel.invoke_method("test", Some(Box::new(EncodableValue::Map(Box::new(vec![
+                (EncodableValue::Int32(3), EncodableValue::String("three".to_string())),
+                (EncodableValue::Bool(false), EncodableValue::List(vec![
+                    EncodableValue::Int32(1),
+                    EncodableValue::Int32(2),
+                    EncodableValue::Int32(3),
+                ])),
+            ])))), None);
         }
         InputEvent::GestureSwipeBegin { .. } => {}
         InputEvent::GestureSwipeUpdate { .. } => {}

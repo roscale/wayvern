@@ -17,58 +17,65 @@ use smithay::{
     utils::{Physical, Size},
 };
 
-use crate::{
-    flutter_engine::{
-        callbacks::{
-            clear_current,
-            fbo_callback,
-            make_current,
-            make_resource_current,
-            present_with_info,
-            surface_transformation,
-        },
-        embedder::{
-            FLUTTER_ENGINE_VERSION,
-            FlutterEngine as FlutterEngineHandle,
-            FlutterEngineGetCurrentTime,
-            FlutterEngineOnVsync,
-            FlutterEngineRun,
-            FlutterEngineSendWindowMetricsEvent,
-            FlutterEngineShutdown,
-            FlutterOpenGLRendererConfig,
-            FlutterProjectArgs,
-            FlutterRendererConfig,
-            FlutterRendererConfig__bindgen_ty_1,
-            FlutterWindowMetricsEvent,
-        },
+use crate::{Backend, flutter_engine::{
+    callbacks::{
+        clear_current,
+        fbo_callback,
+        make_current,
+        make_resource_current,
+        present_with_info,
+        surface_transformation,
     },
-};
+    embedder::{
+        FLUTTER_ENGINE_VERSION,
+        FlutterEngine as FlutterEngineHandle,
+        FlutterEngineGetCurrentTime,
+        FlutterEngineOnVsync,
+        FlutterEngineRun,
+        FlutterEngineSendWindowMetricsEvent,
+        FlutterEngineShutdown,
+        FlutterOpenGLRendererConfig,
+        FlutterProjectArgs,
+        FlutterRendererConfig,
+        FlutterRendererConfig__bindgen_ty_1,
+        FlutterWindowMetricsEvent,
+    },
+}, GlobalState};
 use crate::flutter_engine::callbacks::vsync_callback;
-use crate::flutter_engine::embedder::{FlutterEngineSendPointerEvent, FlutterPointerEvent};
+use crate::flutter_engine::embedder::{FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTask, FlutterTaskRunnerDescription};
+use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 
 mod callbacks;
 pub mod embedder;
-mod platform_channels;
-mod task_runner;
+pub mod platform_channels;
+pub mod task_runner;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
 /// - Send is not implemented because all its methods must be called from the thread the engine was created.
-pub struct FlutterEngine(FlutterEngineHandle, *mut FlutterEngineData);
+pub struct FlutterEngine {
+    pub handle: FlutterEngineHandle,
+    data: *mut FlutterEngineData,
+    pub task_runner: TaskRunner,
+    current_thread_id: std::thread::ThreadId,
+}
 
 /// I don't want people to clone it because it's UB to call [FlutterEngine::on_vsync] multiple times
 /// with the same baton, which will most probably segfault.
 pub struct Baton(isize);
 
-impl Default for FlutterEngine {
-    fn default() -> Self {
-        Self(null_mut(), null_mut())
-    }
-}
-
 impl FlutterEngine {
-    pub fn run(&mut self, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
+    pub fn new(task_runner: TaskRunner) -> Self {
+        Self {
+            handle: null_mut(),
+            data: null_mut(),
+            task_runner,
+            current_thread_id: std::thread::current().id(),
+        }
+    }
+
+    pub fn run(&mut self, user_data: *mut GlobalState<dyn Backend + 'static>, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
@@ -105,6 +112,14 @@ impl FlutterEngine {
             observatory_port.as_ptr(),
             disable_service_auth_codes.as_ptr(),
         ];
+
+        FlutterTaskRunnerDescription {
+            struct_size: size_of::<FlutterTaskRunnerDescription>(),
+            user_data: user_data as *mut _,
+            runs_task_on_current_thread_callback: Some(runs_task_on_current_thread_callback),
+            post_task_callback: Some(post_task_callback),
+            identifier: 1,
+        };
 
         let project_args = FlutterProjectArgs {
             struct_size: size_of::<FlutterProjectArgs>(),
@@ -184,8 +199,8 @@ impl FlutterEngine {
             return Err(format!("Could not initalize the Flutter engine, error {result}").into());
         }
 
-        self.0 = flutter_engine;
-        self.1 = flutter_engine_data;
+        self.handle = flutter_engine;
+        self.data = flutter_engine_data;
 
         Ok(embedder_channels)
     }
@@ -213,7 +228,7 @@ impl FlutterEngine {
             display_id: 0,
         };
 
-        let result = unsafe { FlutterEngineSendWindowMetricsEvent(self.0, &event as *const _) };
+        let result = unsafe { FlutterEngineSendWindowMetricsEvent(self.handle, &event as *const _) };
         if result != 0 {
             return Err(format!("Could not send window metrics event, error {result}").into());
         }
@@ -223,7 +238,7 @@ impl FlutterEngine {
     pub fn on_vsync(&self, baton: Baton) -> Result<(), Box<dyn std::error::Error>> {
         let now = unsafe { FlutterEngineGetCurrentTime() };
         let next_frame = now + (1_000_000_000 / 144);
-        let result = unsafe { FlutterEngineOnVsync(self.0, baton.0, now, next_frame) };
+        let result = unsafe { FlutterEngineOnVsync(self.handle, baton.0, now, next_frame) };
         if result != 0 {
             return Err(format!("Could not send vsync baton, error {result}").into());
         }
@@ -231,30 +246,45 @@ impl FlutterEngine {
     }
 
     pub fn send_pointer_event(&self, event: FlutterPointerEvent) -> Result<(), Box<dyn std::error::Error>> {
-        let result = unsafe { FlutterEngineSendPointerEvent(self.0, &event as *const _, 1) };
+        let result = unsafe { FlutterEngineSendPointerEvent(self.handle, &event as *const _, 1) };
         if result != 0 {
             return Err(format!("Could not send pointer event, error {result}").into());
         }
         Ok(())
     }
+
+    pub fn run_task(&self, task: &FlutterTask) {
+        unsafe { FlutterEngineRunTask(self.handle, task as *const _) };
+    }
+}
+
+extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
+    let state = unsafe { &*(user_data as *const GlobalState<dyn Backend>) };
+    state.flutter_engine.current_thread_id == std::thread::current().id()
+}
+
+extern "C" fn post_task_callback(task: FlutterTask, target_time: u64, user_data: *mut c_void) {
+    let mut state = unsafe { &mut *(user_data as *mut GlobalState<dyn Backend + 'static>) };
+    let timeout = state.flutter_engine.task_runner.enqueue_task(task, target_time);
+    state.flutter_engine.task_runner.reschedule_timer.send(timeout).unwrap();
 }
 
 impl Drop for FlutterEngine {
     fn drop(&mut self) {
-        if !self.0.is_null() {
-            let _ = unsafe { FlutterEngineShutdown(self.0) };
+        if !self.handle.is_null() {
+            let _ = unsafe { FlutterEngineShutdown(self.handle) };
         }
-        if !self.1.is_null() {
-            let _ = unsafe { Box::from_raw(self.1) };
+        if !self.data.is_null() {
+            let _ = unsafe { Box::from_raw(self.data) };
         }
     }
 }
 
 struct FlutterEngineData {
-    pub gl: Gles2,
-    pub main_egl_context: EGLContext,
-    pub resource_egl_context: EGLContext,
-    pub output_height: Option<u16>,
+    gl: Gles2,
+    main_egl_context: EGLContext,
+    resource_egl_context: EGLContext,
+    output_height: Option<u16>,
     channels: FlutterEngineChannels,
     framebuffer_importer: GlesFramebufferImporter,
 }
@@ -265,7 +295,7 @@ struct FlutterEngineData {
 unsafe impl Send for FlutterEngineData {}
 
 impl FlutterEngineData {
-    pub fn new(root_egl_context: &EGLContext, channels: FlutterEngineChannels) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(root_egl_context: &EGLContext, channels: FlutterEngineChannels) -> Result<Self, Box<dyn std::error::Error>> {
         unsafe { root_egl_context.make_current()? };
 
         let egl_display = root_egl_context.display();
@@ -289,11 +319,11 @@ impl FlutterEngineData {
 }
 
 pub struct FlutterEngineChannels {
-    pub tx_present: channel::Sender<()>,
-    pub tx_request_fbo: channel::Sender<()>,
-    pub rx_fbo: channel::Channel<Option<Dmabuf>>,
-    pub rx_output_height: channel::Channel<u16>,
-    pub tx_baton: channel::Sender<Baton>,
+    tx_present: channel::Sender<()>,
+    tx_request_fbo: channel::Sender<()>,
+    rx_fbo: channel::Channel<Option<Dmabuf>>,
+    rx_output_height: channel::Channel<u16>,
+    tx_baton: channel::Sender<Baton>,
 }
 
 pub struct EmbedderChannels {

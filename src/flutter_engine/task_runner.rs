@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex};
 use std::time::Duration;
+use smithay::reexports::calloop::{channel};
 
-use smithay::reexports::calloop::timer::Timer;
-
-use crate::flutter_engine::embedder::{FlutterEngine as FlutterEngineHandle, FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask};
+use crate::flutter_engine::embedder::{FlutterEngineGetCurrentTime, FlutterTask};
 
 type TargetTime = u64;
 
@@ -39,17 +38,25 @@ impl PartialOrd<Self> for Task {
 pub struct TaskRunner {
     tasks: Mutex<BinaryHeap<Task>>,
     expired_tasks: Vec<Task>,
-    timer: Timer,
+    pub reschedule_timer: channel::Sender<Duration>,
 }
 
 impl TaskRunner {
-    pub fn enqueue_task(&mut self, task: FlutterTask, target_time: TargetTime) {
-        let mut tasks = self.tasks.lock().unwrap();
-        tasks.push(Task(task, target_time));
-        Self::schedule_timer(&mut self.timer, tasks);
+    pub fn new(reschedule_timer: channel::Sender<Duration>) -> Self {
+        Self {
+            tasks: Mutex::new(BinaryHeap::new()),
+            expired_tasks: Vec::new(),
+            reschedule_timer,
+        }
     }
 
-    pub fn execute_expired_tasks(&mut self, flutter_engine_handle: FlutterEngineHandle) {
+    pub fn enqueue_task(&mut self, task: FlutterTask, target_time: TargetTime) -> Duration {
+        let mut tasks = self.tasks.lock().unwrap();
+        tasks.push(Task(task, target_time));
+        self.reschedule_timer()
+    }
+
+    pub fn execute_expired_tasks(&mut self, execute_task: &dyn Fn(&FlutterTask)) -> Duration {
         assert!(self.expired_tasks.is_empty());
 
         {
@@ -62,19 +69,28 @@ impl TaskRunner {
                 }
                 self.expired_tasks.push(tasks.pop().unwrap());
             }
-            Self::schedule_timer(&mut self.timer, tasks);
         }
 
         for Task(task, _) in self.expired_tasks.drain(..) {
-            unsafe { FlutterEngineRunTask(flutter_engine_handle, &task) };
+            execute_task(&task);
         }
+
+        self.reschedule_timer()
     }
 
-    fn schedule_timer(timer: &mut Timer, tasks: MutexGuard<BinaryHeap<Task>>) {
-        if let Some(Task(_, target_time)) = tasks.peek() {
-            let now = unsafe { FlutterEngineGetCurrentTime() };
-            let duration_ns = target_time.checked_sub(now).unwrap_or(0);
-            timer.set_duration(Duration::from_nanos(duration_ns));
+    fn reschedule_timer(&self) -> Duration {
+        let tasks = self.tasks.lock().unwrap();
+
+        match tasks.peek() {
+            None => {
+                // We don't want to drop the timer because it will rescheduled when new tasks arrive.
+                Duration::MAX
+            }
+            Some(Task(_, target_time)) => {
+                let now = unsafe { FlutterEngineGetCurrentTime() };
+                let duration_ns = target_time.checked_sub(now).unwrap_or(0);
+                Duration::from_nanos(duration_ns)
+            }
         }
     }
 }

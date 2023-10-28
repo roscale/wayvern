@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::flutter_engine::platform_channels::byte_buffer_streams::{ByteBufferStreamReader, ByteBufferStreamWriter};
 use crate::flutter_engine::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
 use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
@@ -8,15 +6,14 @@ use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::platform_channels::standard_codec_serializer::StandardCodecSerializer;
 
-struct StandardMethodCodec {
-    serializer: Rc<StandardCodecSerializer>,
+#[derive(Default)]
+pub struct StandardMethodCodec {
+    serializer: StandardCodecSerializer,
 }
 
 impl StandardMethodCodec {
-    pub fn new(serializer: Rc<StandardCodecSerializer>) -> Self {
-        Self {
-            serializer,
-        }
+    pub fn new() -> Self {
+        Default::default()
     }
 }
 

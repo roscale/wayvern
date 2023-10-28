@@ -4,15 +4,14 @@ use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::message_codec::MessageCodec;
 use crate::flutter_engine::platform_channels::standard_codec_serializer::StandardCodecSerializer;
 
+#[derive(Default)]
 pub struct StandardMessageCodec {
     serializer: Rc<StandardCodecSerializer>,
 }
 
 impl StandardMessageCodec {
-    pub fn new(serializer: Rc<StandardCodecSerializer>) -> Self {
-        Self {
-            serializer,
-        }
+    pub fn new() -> Self {
+        Default::default()
     }
 }
 

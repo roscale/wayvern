@@ -1,5 +1,4 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use log::{error, warn};
 use smithay::{
@@ -33,17 +32,12 @@ use smithay::{
         wayland_server::Display,
     },
     utils::DeviceFd,
-    wayland::{
-        compositor::CompositorState,
-        shell::xdg::XdgShellState,
-        shm::ShmState,
-    },
 };
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::Clock;
 
-use crate::{Backend, CalloopData, flutter_engine::{EmbedderChannels, FlutterEngine}, GlobalState};
+use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, GlobalState};
+use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::input_handling::handle_input;
 
 pub fn run_x11_client() {
@@ -120,7 +114,22 @@ pub fn run_x11_client() {
         },
     };
 
-    let mut flutter_engine = FlutterEngine::default();
+    let mut state = GlobalState::new(
+        display,
+        event_loop.handle(),
+        X11Data {
+            x11_surface,
+            mode: Mode {
+                size: {
+                    let s = window.size();
+                    (s.w as i32, s.h as i32).into()
+                },
+                refresh: 144_000,
+            },
+        },
+    );
+
+    let state_ptr = &mut state as *const _ as *mut _;
 
     let EmbedderChannels {
         rx_present,
@@ -128,37 +137,11 @@ pub fn run_x11_client() {
         mut tx_fbo,
         tx_output_height,
         rx_baton,
-    } = flutter_engine.run(&egl_context).unwrap();
+    } = state.flutter_engine.run(state_ptr, &egl_context).unwrap();
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
-    flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
-
-    let mut state = {
-        GlobalState {
-            running: Arc::new(AtomicBool::new(true)),
-            display_handle: display_handle.clone(),
-            loop_handle: event_loop.handle(),
-            clock: Clock::new().expect("failed to initialize clock"),
-            backend_data: X11Data {
-                x11_surface,
-                mode: Mode {
-                    size: {
-                        let s = window.size();
-                        (s.w as i32, s.h as i32).into()
-                    },
-                    refresh: 144_000,
-                },
-            },
-            flutter_engine,
-            mouse_button_tracker: Default::default(),
-            mouse_position: Default::default(),
-            next_vblank_scheduled: false,
-            compositor_state: CompositorState::new::<GlobalState<X11Data>>(&display_handle),
-            xdg_shell_state: XdgShellState::new::<GlobalState<X11Data>>(&display_handle),
-            shm_state: ShmState::new::<GlobalState<X11Data>>(&display_handle, vec![]),
-        }
-    };
+    state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.

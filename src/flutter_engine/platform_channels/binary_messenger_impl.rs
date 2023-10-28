@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
 use crate::flutter_engine::embedder::{FlutterDataCallback, FlutterEngine as FlutterEngineHandle, FlutterEngineResult_kSuccess, FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse, FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle, FlutterPlatformMessageReleaseResponseHandle};
-use crate::flutter_engine::FlutterEngine;
 use crate::flutter_engine::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
 
-struct BinaryMessengerImpl<'a> {
-    flutter_engine: &'a mut FlutterEngine,
+pub struct BinaryMessengerImpl {
+    flutter_engine: FlutterEngineHandle,
     handlers: HashMap<String, BinaryMessageHandler>,
 }
 
-impl<'a> BinaryMessengerImpl<'a> {
-    pub fn new(flutter_engine: &'a mut FlutterEngine) -> Self {
+impl BinaryMessengerImpl {
+    pub fn new(flutter_engine: FlutterEngineHandle) -> Self {
         Self {
             flutter_engine,
             handlers: HashMap::new(),
@@ -30,7 +30,7 @@ extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut :
     captures.reply.unwrap()(Some(data));
 }
 
-impl<'a> BinaryMessenger for BinaryMessengerImpl<'a> {
+impl BinaryMessenger for BinaryMessengerImpl {
 
     fn handle_message(&mut self, message: FlutterPlatformMessage) {
         let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
@@ -39,7 +39,7 @@ impl<'a> BinaryMessenger for BinaryMessengerImpl<'a> {
             let message_bytes = unsafe { std::slice::from_raw_parts(message.message, message.message_size) };
 
             let response_handle = message.response_handle;
-            let engine_handle = self.flutter_engine.0;
+            let engine_handle = self.flutter_engine;
             let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<&[u8]>| {
                 let data = reply.map(|v| v.as_ptr()).unwrap_or(std::ptr::null());
                 let data_size = reply.map(|v| v.len()).unwrap_or(0);
@@ -47,22 +47,21 @@ impl<'a> BinaryMessenger for BinaryMessengerImpl<'a> {
             }));
             handler.as_mut().unwrap()(message_bytes, reply_handler);
         } else {
-            unsafe { FlutterEngineSendPlatformMessageResponse(self.flutter_engine.0, message.response_handle, null(), 0) };
+            unsafe { FlutterEngineSendPlatformMessageResponse(self.flutter_engine, message.response_handle, null(), 0) };
         }
     }
 
     fn send(&mut self, channel: &str, message: &[u8], reply: BinaryReply) {
-        let channel = channel.to_string();
         if reply.is_some() {
             let captures = Box::into_raw(Box::new(Captures {
                 reply,
             }));
-            let result = send_message_with_reply(self.flutter_engine.0, &channel, message, Some(message_reply), captures as *mut ::std::os::raw::c_void);
+            let result = send_message_with_reply(self.flutter_engine, channel, message, Some(message_reply), captures as *mut ::std::os::raw::c_void);
             if !result {
                 let _ = unsafe { Box::from_raw(captures) };
             }
         } else {
-            send_message_with_reply(self.flutter_engine.0, &channel, message, None, null_mut());
+            send_message_with_reply(self.flutter_engine, channel, message, None, null_mut());
         };
     }
 
@@ -87,7 +86,7 @@ fn send_message_with_reply(flutter_engine: FlutterEngineHandle, channel: &str, m
 
     let channel_cstring = CString::new(channel).unwrap();
     let platform_message = FlutterPlatformMessage {
-        struct_size: 0,
+        struct_size: size_of::<FlutterPlatformMessage>(),
         channel: channel_cstring.as_ptr(),
         message: message.as_ptr(),
         message_size: message.len(),

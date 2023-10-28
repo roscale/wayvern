@@ -14,6 +14,10 @@ pub struct MouseButtonTracker {
 }
 
 impl MouseButtonTracker {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn is_down(&self, button: input_linux::Key) -> bool {
         self.down.contains(&button)
     }

@@ -74,12 +74,12 @@ impl EncodableValue {
     }
 }
 
-
-pub struct StandardCodecSerializer;
+#[derive(Default)]
+pub(crate) struct StandardCodecSerializer;
 
 impl StandardCodecSerializer {
     pub fn new() -> Self {
-        Self
+        Default::default()
     }
 
     pub fn read_value(&self, stream: &mut dyn ByteStreamReader) -> EncodableValue {

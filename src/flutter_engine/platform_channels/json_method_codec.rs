@@ -7,7 +7,14 @@ use crate::flutter_engine::platform_channels::method_result::MethodResult;
 const K_MESSAGE_METHOD_KEY: &str = "method";
 const K_MESSAGE_ARGUMENTS_KEY: &str = "args";
 
-struct JsonMethodCodec {}
+#[derive(Default)]
+pub struct JsonMethodCodec {}
+
+impl JsonMethodCodec {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
 
 impl MethodCodec<serde_json::Value> for JsonMethodCodec {
     fn decode_method_call_internal(&self, message: &[u8]) -> Option<MethodCall<serde_json::Value>> {

@@ -15,7 +15,7 @@ impl<T> MethodCall<T> {
         &self.method
     }
 
-    pub fn arguments(&self) -> Option<&Box<T>> {
-        self.arguments.as_ref()
+    pub fn arguments(&self) -> Option<&T> {
+        self.arguments.as_deref()
     }
 }

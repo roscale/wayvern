@@ -38,10 +38,15 @@ use smithay::{
         shm::{ShmHandler, ShmState},
     },
 };
-use smithay::reexports::calloop::{channel, LoopHandle};
+use smithay::reexports::calloop::{channel, Dispatcher, EventSource, LoopHandle};
+use smithay::reexports::calloop::channel::Event::Msg;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Clock, Monotonic};
+use crate::flutter_engine::embedder::FlutterEngineRunTask;
 
 use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::task_runner::TaskRunner;
 use crate::mouse_button_tracker::MouseButtonTracker;
 
 mod flutter_engine;
@@ -66,6 +71,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+pub trait Backend {}
+
+pub struct GlobalState<BackendData: Backend + 'static + ?Sized> {
+    pub running: Arc<AtomicBool>,
+    pub display_handle: DisplayHandle,
+    pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
+    pub clock: Clock<Monotonic>,
+    pub backend_data: Box<BackendData>,
+    // space: Space<WindowElement>,
+
+    pub flutter_engine: FlutterEngine,
+    pub mouse_button_tracker: MouseButtonTracker,
+    pub mouse_position: (f64, f64),
+    pub next_vblank_scheduled: bool,
+
+    pub compositor_state: CompositorState,
+    pub xdg_shell_state: XdgShellState,
+    pub shm_state: ShmState,
+}
+
+impl<BackendData: Backend + 'static> GlobalState<BackendData> {
+    pub fn new(
+        display: Display<GlobalState<BackendData>>,
+        loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
+        backend_data: BackendData,
+    ) -> GlobalState<BackendData> {
+        let display_handle = display.handle();
+        let clock = Clock::new().expect("failed to initialize clock");
+        let compositor_state = CompositorState::new::<Self>(&display_handle);
+        let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
+        let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
+
+        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), |deadline, _, data: &mut CalloopData<BackendData>| {
+            let handle = data.state.flutter_engine.handle;
+            let duration = data.state.flutter_engine.task_runner.execute_expired_tasks(&|task| {
+                unsafe { FlutterEngineRunTask(handle, task as *const _) };
+            });
+            TimeoutAction::ToDuration(duration)
+        });
+
+        let task_runner_timer_registration_token = loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
+        let (reschedule_timer_tx, reschedule_timer_rx) = channel::channel();
+
+        loop_handle.insert_source(reschedule_timer_rx, move |event, _, data: &mut CalloopData<BackendData>| {
+            if let Msg(duration) = event {
+                task_runner_timer_dispatcher.as_source_mut().set_duration(duration);
+                data.state.loop_handle.update(&task_runner_timer_registration_token).unwrap();
+            }
+        }).unwrap();
+
+        Self {
+            running: Arc::new(AtomicBool::new(true)),
+            display_handle,
+            loop_handle,
+            clock,
+            backend_data: Box::new(backend_data),
+            flutter_engine: FlutterEngine::new(TaskRunner::new(reschedule_timer_tx)),
+            mouse_button_tracker: MouseButtonTracker::new(),
+            mouse_position: (0.0, 0.0),
+            next_vblank_scheduled: false,
+            compositor_state,
+            xdg_shell_state,
+            shm_state,
+        }
+    }
 }
 
 impl<BackendData: Backend> BufferHandler for GlobalState<BackendData> {
@@ -123,28 +195,7 @@ impl<BackendData: Backend> DmabufHandler for GlobalState<BackendData> {
     }
 }
 
-
-pub trait Backend {}
-
-pub struct GlobalState<BackendData: Backend + 'static> {
-    pub running: Arc<AtomicBool>,
-    pub display_handle: DisplayHandle,
-    pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
-    pub clock: Clock<Monotonic>,
-    pub backend_data: BackendData,
-    // space: Space<WindowElement>,
-
-    pub flutter_engine: FlutterEngine,
-    pub mouse_button_tracker: MouseButtonTracker,
-    pub mouse_position: (f64, f64),
-    pub next_vblank_scheduled: bool,
-
-    pub compositor_state: CompositorState,
-    pub xdg_shell_state: XdgShellState,
-    pub shm_state: ShmState,
-}
-
-pub struct CalloopData<BackendData: Backend + 'static> {
+pub struct CalloopData<BackendData: Backend + 'static + ?Sized> {
     pub state: GlobalState<BackendData>,
     pub tx_fbo: channel::Sender<Option<Dmabuf>>,
     pub baton: Option<flutter_engine::Baton>,

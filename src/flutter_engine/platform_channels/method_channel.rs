@@ -8,23 +8,23 @@ use crate::flutter_engine::platform_channels::method_result::MethodResult;
 
 type MethodCallHandler<T> = Option<Box<dyn FnMut(&MethodCall<T>, Box<dyn MethodResult<T>>)>>;
 
-struct MethodChannel<'m, T> {
+pub struct MethodChannel<'m, T> {
     messenger: &'m mut dyn BinaryMessenger,
     name: String,
     codec: Rc<dyn MethodCodec<T>>,
 }
 
 impl<'m, T: 'static> MethodChannel<'m, T> {
-    pub fn new(messenger: &'m mut dyn BinaryMessenger, name: &str, codec: Rc<dyn MethodCodec<T>>) -> Self {
+    pub fn new(messenger: &'m mut dyn BinaryMessenger, name: String, codec: Rc<dyn MethodCodec<T>>) -> Self {
         Self {
             messenger,
-            name: name.to_string(),
+            name,
             codec,
         }
     }
 
-    pub fn invoke_method(&mut self, method: &str, arguments: Box<T>, result: Option<Box<dyn MethodResult<T>>>) {
-        let method_call = MethodCall::new(method.to_string(), Some(arguments));
+    pub fn invoke_method(&mut self, method: &str, arguments: Option<Box<T>>, result: Option<Box<dyn MethodResult<T>>>) {
+        let method_call = MethodCall::new(method.to_string(), arguments);
         let message = self.codec.encode_method_call(&method_call);
         let mut result = if let Some(result) = result {
             result

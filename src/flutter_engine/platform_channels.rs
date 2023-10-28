@@ -1,4 +1,6 @@
 pub mod binary_messenger;
+pub mod binary_messenger_impl;
+
 pub mod method_call;
 pub mod encodable_value;
 pub mod method_result;
@@ -8,7 +10,6 @@ pub mod method_channel;
 pub mod message_codec;
 pub mod json_message_codec;
 pub mod json_method_codec;
-pub mod binary_messenger_impl;
 pub mod byte_streams;
 pub mod standard_codec_serializer;
 pub mod standard_message_codec;
