@@ -170,7 +170,7 @@ pub fn run_x11_client() {
                 data.state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                data.state.next_vblank_scheduled = false;
+                data.state.is_next_vblank_scheduled = false;
                 if let Some(baton) = data.baton.take() {
                     data.state.flutter_engine.on_vsync(baton).unwrap();
                 }
@@ -183,12 +183,13 @@ pub fn run_x11_client() {
         if let Event::Msg(baton) = baton {
             data.baton = Some(baton);
         }
-        if data.state.next_vblank_scheduled {
+        if data.state.is_next_vblank_scheduled {
             return;
         }
         if let Some(baton) = data.baton.take() {
             data.state.flutter_engine.on_vsync(baton).unwrap();
         }
+
         // if let Err(err) = data.state.backend_data.x11_surface.submit() {
         //     data.state.backend_data.x11_surface.reset_buffers();
         //     warn!("Failed to submit buffer: {}. Retrying", err);
@@ -208,7 +209,7 @@ pub fn run_x11_client() {
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
-        data.state.next_vblank_scheduled = true;
+        data.state.is_next_vblank_scheduled = true;
         if let Err(err) = data.state.backend_data.x11_surface.submit() {
             data.state.backend_data.x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);

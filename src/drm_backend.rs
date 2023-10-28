@@ -160,6 +160,10 @@ pub fn run_drm_backend() {
         .insert_source(libinput_backend, move |event, _, data| {
             let _dh = data.state.display_handle.clone();
             handle_input(&event, data);
+            // TODO: When the cursor moves, the cursor CRTC plane has to be updated.
+            // However, we should call this only when the cursor actually moves, and not on every
+            // input event.
+            data.state.update_crtc_planes();
         })
         .unwrap();
 
@@ -187,7 +191,7 @@ pub fn run_drm_backend() {
         if let Event::Msg(baton) = baton {
             data.baton = Some(baton);
         }
-        if data.state.next_vblank_scheduled {
+        if data.state.is_next_vblank_scheduled {
             return;
         }
         if let Some(baton) = data.baton.take() {
@@ -204,8 +208,10 @@ pub fn run_drm_backend() {
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
-        render_flutter_frame(&mut data.state);
-        data.state.next_vblank_scheduled = true;
+        let gpu_data = data.state.backend_data.get_gpu_data_mut();
+        gpu_data.last_rendered_slot = gpu_data.current_slot.take();
+        data.state.update_crtc_planes();
+        data.state.is_next_vblank_scheduled = true;
     }).unwrap();
 
     while state.running.load(Ordering::SeqCst) {
@@ -234,92 +240,94 @@ pub fn run_drm_backend() {
     drop(tx_fbo);
 }
 
-fn render_flutter_frame(state: &mut GlobalState<DrmBackend>) {
-    let primary_gpu = state.backend_data.primary_gpu;
-    let gpu_data = if let Some(gpu_data) = state.backend_data.gpus.get_mut(&primary_gpu) {
-        gpu_data
-    } else {
-        return;
-    };
-
-    let (gles_renderer, surface, current_slot, swapchain) = (
-        &mut gpu_data.gles_renderer,
-        if let Some(surface) = gpu_data.surfaces.values_mut().next() {
-            surface
+impl GlobalState<DrmBackend> {
+    pub fn update_crtc_planes(&mut self) {
+        let primary_gpu = self.backend_data.primary_gpu;
+        let gpu_data = if let Some(gpu_data) = self.backend_data.gpus.get_mut(&primary_gpu) {
+            gpu_data
         } else {
             return;
-        },
-        &mut gpu_data.current_slot,
-        &mut gpu_data.swapchain,
-    );
+        };
 
-    let slot = if let Some(slot) = current_slot.as_mut() {
-        slot
-    } else {
-        // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
-        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
-        surface.compositor.queue_frame(None).unwrap();
-        return;
-    };
-
-    let flutter_texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
-    let flutter_texture_buffer = TextureBuffer::from_texture(gles_renderer, flutter_texture, 1, Transform::Flipped180, None);
-    let flutter_texture_element = TextureRenderElement::from_texture_buffer(
-        Point::from((0.0, 0.0)),
-        &flutter_texture_buffer,
-        None,
-        None,
-        None,
-        Kind::Unspecified,
-    );
-
-    let frame = state.backend_data
-        .pointer_image
-        .get_image(1, state.clock.now().try_into().unwrap());
-
-    let cursor_position = Point::from(state.mouse_position) - Point::from((frame.xhot as f64, frame.yhot as f64));
-
-    let pointer_images = &mut state.backend_data.pointer_images;
-    let pointer_image = pointer_images
-        .iter()
-        .find_map(|(image, texture)| {
-            if image == &frame {
-                Some(texture.clone())
+        let (gles_renderer, surface, last_rendered_slot, swapchain) = (
+            &mut gpu_data.gles_renderer,
+            if let Some(surface) = gpu_data.surfaces.values_mut().next() {
+                surface
             } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| {
-            let texture = TextureBuffer::from_memory(
-                gles_renderer,
-                &frame.pixels_rgba,
-                Fourcc::Abgr8888,
-                (frame.width as i32, frame.height as i32),
-                false,
-                1,
-                Transform::Normal,
-                None,
-            ).expect("Failed to import cursor bitmap");
-            pointer_images.push((frame, texture.clone()));
-            texture
-        });
+                return;
+            },
+            &mut gpu_data.last_rendered_slot,
+            &mut gpu_data.swapchain,
+        );
 
-    let cursor_element = TextureRenderElement::from_texture_buffer(
-        cursor_position,
-        &pointer_image,
-        None,
-        None,
-        None,
-        Kind::Cursor,
-    );
+        let slot = if let Some(slot) = last_rendered_slot.as_mut() {
+            slot
+        } else {
+            // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
+            surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
+            surface.compositor.queue_frame(None).unwrap();
+            return;
+        };
 
-    surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(
-        gles_renderer,
-        &[flutter_texture_element, cursor_element],
-        [0.0, 0.0, 0.0, 0.0],
-    ).unwrap();
-    surface.compositor.queue_frame(None).unwrap();
-    swapchain.submitted(slot);
+        let flutter_texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
+        let flutter_texture_buffer = TextureBuffer::from_texture(gles_renderer, flutter_texture, 1, Transform::Flipped180, None);
+        let flutter_texture_element = TextureRenderElement::from_texture_buffer(
+            Point::from((0.0, 0.0)),
+            &flutter_texture_buffer,
+            None,
+            None,
+            None,
+            Kind::Unspecified,
+        );
+
+        let pointer_frame = self.backend_data
+            .pointer_image
+            .get_image(1, self.clock.now().try_into().unwrap());
+
+        let cursor_position = Point::from(self.mouse_position) - Point::from((pointer_frame.xhot as f64, pointer_frame.yhot as f64));
+
+        let pointer_images = &mut self.backend_data.pointer_images;
+        let pointer_image = pointer_images
+            .iter()
+            .find_map(|(image, texture)| {
+                if image == &pointer_frame {
+                    Some(texture.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| {
+                let texture = TextureBuffer::from_memory(
+                    gles_renderer,
+                    &pointer_frame.pixels_rgba,
+                    Fourcc::Abgr8888,
+                    (pointer_frame.width as i32, pointer_frame.height as i32),
+                    false,
+                    1,
+                    Transform::Normal,
+                    None,
+                ).expect("Failed to import cursor bitmap");
+                pointer_images.push((pointer_frame, texture.clone()));
+                texture
+            });
+
+        let cursor_element = TextureRenderElement::from_texture_buffer(
+            cursor_position,
+            &pointer_image,
+            None,
+            None,
+            None,
+            Kind::Cursor,
+        );
+
+        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(
+            gles_renderer,
+            &[flutter_texture_element, cursor_element],
+            [0.0, 0.0, 0.0, 0.0],
+        ).unwrap();
+        surface.compositor.queue_frame(None).unwrap();
+        swapchain.submitted(slot);
+    }
 }
 
 #[allow(dead_code)]
@@ -336,6 +344,7 @@ struct GpuData {
     gles_renderer: GlesRenderer,
     swapchain: Swapchain<Box<dyn Allocator<Buffer=Dmabuf, Error=AnyError> + 'static>>,
     current_slot: Option<Slot<Dmabuf>>,
+    last_rendered_slot: Option<Slot<Dmabuf>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -374,7 +383,7 @@ impl GlobalState<DrmBackend> {
                 notifier,
                 move |event, _metadata, data: &mut CalloopData<_>| match event {
                     DrmEvent::VBlank(crtc) => {
-                        data.state.next_vblank_scheduled = false;
+                        data.state.is_next_vblank_scheduled = false;
                         if let Some(surface) = data.state.backend_data.gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
                             let _ = surface.compositor.frame_submitted();
                         }
@@ -427,6 +436,7 @@ impl GlobalState<DrmBackend> {
                 gles_renderer,
                 swapchain,
                 current_slot: None,
+                last_rendered_slot: None,
             },
         );
 

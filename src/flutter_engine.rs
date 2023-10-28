@@ -41,7 +41,7 @@ use crate::{Backend, flutter_engine::{
         FlutterWindowMetricsEvent,
     },
 }, GlobalState};
-use crate::flutter_engine::callbacks::vsync_callback;
+use crate::flutter_engine::callbacks::{populate_existing_damage, vsync_callback};
 use crate::flutter_engine::embedder::{FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTask, FlutterTaskRunnerDescription};
 use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
@@ -179,7 +179,7 @@ impl FlutterEngine {
                     gl_external_texture_frame_callback: None,
                     fbo_with_frame_info_callback: None,
                     present_with_info: Some(present_with_info),
-                    populate_existing_damage: None,
+                    populate_existing_damage: Some(populate_existing_damage),
                 }
             },
         };

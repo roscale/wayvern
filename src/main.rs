@@ -86,7 +86,7 @@ pub struct GlobalState<BackendData: Backend + 'static + ?Sized> {
     pub flutter_engine: FlutterEngine,
     pub mouse_button_tracker: MouseButtonTracker,
     pub mouse_position: (f64, f64),
-    pub next_vblank_scheduled: bool,
+    pub is_next_vblank_scheduled: bool,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -132,7 +132,7 @@ impl<BackendData: Backend + 'static> GlobalState<BackendData> {
             flutter_engine: FlutterEngine::new(TaskRunner::new(reschedule_timer_tx)),
             mouse_button_tracker: MouseButtonTracker::new(),
             mouse_position: (0.0, 0.0),
-            next_vblank_scheduled: false,
+            is_next_vblank_scheduled: false,
             compositor_state,
             xdg_shell_state,
             shm_state,
