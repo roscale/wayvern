@@ -7,7 +7,7 @@ use crate::flutter_engine::platform_channels::method_call::MethodCall;
 use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 
-type MethodCallHandler<T> = Option<Box<dyn FnMut(&MethodCall<T>, Box<dyn MethodResult<T>>)>>;
+type MethodCallHandler<T> = Option<Box<dyn FnMut(MethodCall<T>, Box<dyn MethodResult<T>>)>>;
 
 pub struct MethodChannel<'m, T = EncodableValue> {
     messenger: &'m mut dyn BinaryMessenger,
@@ -65,7 +65,7 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
             let mut result = EngineMethodResult::new(reply, codec.clone());
             let method_call = codec.decode_method_call(message);
             if let Some(method_call) = method_call {
-                handler(&method_call, Box::new(result));
+                handler(method_call, Box::new(result));
             } else {
                 eprintln!("Unable to construct method call from message on channel {channel_name}");
                 result.not_implemented();

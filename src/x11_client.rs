@@ -155,33 +155,19 @@ pub fn run_x11_client() {
         Rc::new(StandardMethodCodec::new()),
     );
 
-    method_channel.set_method_call_handler(Some(Box::new(|call, mut result| {
-        println!("Received method call: {:?}", call);
-        result.success(Some(EncodableValue::String("Hello from Rust!".to_string())));
+    let (tx_test, rx_test) = channel::channel();
+
+    // TODO: Provide a way to specify a channel directly, without registering a callback.
+    method_channel.set_method_call_handler(Some(Box::new(move |call, result| {
+        let _ = tx_test.send((call, result));
     })));
 
-    let (tx_test, rx_test) = channel::channel();
-    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultMpscChannel::new(tx_test))));
-
-    event_loop
-        .handle()
-        .insert_source(rx_test, move |event, _, data: &mut CalloopData<X11Data>| {
-            if let Msg(event) = event {
-                match event {
-                    MethodResultEnum::Success(result) => {
-                        // data.state.running.store(false, Ordering::SeqCst);
-                        println!("Received method result: {:?}", result);
-                    },
-                    MethodResultEnum::Error { code, message, details } => {
-                        println!("Received method error: {:?} {:?} {:?}", code, message, details);
-                    },
-                    MethodResultEnum::NotImplemented => {
-                        println!("Received method result: NotImplemented");
-                    },
-                }
-            };
-        }).unwrap();
-
+    event_loop.handle().insert_source(rx_test, move |event, _, data| {
+        if let Msg((_method, mut result)) = event {
+            data.state.running.store(false, Ordering::SeqCst);
+            result.success(Some(EncodableValue::String("Hello from Rust!".to_string())));
+        };
+    }).unwrap();
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
