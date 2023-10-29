@@ -34,7 +34,9 @@ use smithay::{
     },
     utils::DeviceFd,
 };
+use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::channel::Event;
+use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 
 use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
@@ -43,6 +45,7 @@ use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine::platform_channels::method_result_functions::MethodResultFunctions;
+use crate::flutter_engine::platform_channels::method_result_mpsc_channel::{MethodResultEnum, MethodResultMpscChannel};
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
 
@@ -154,20 +157,31 @@ pub fn run_x11_client() {
 
     method_channel.set_method_call_handler(Some(Box::new(|call, mut result| {
         println!("Received method call: {:?}", call);
-        result.success(Some(&EncodableValue::String("Hello from Rust!".to_string())));
+        result.success(Some(EncodableValue::String("Hello from Rust!".to_string())));
     })));
 
-    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultFunctions::new(
-        Some(Box::new(|result| {
-            println!("Success: {:?}", result);
-        })),
-        Some(Box::new(|code, message, details| {
-            println!("Error: {} {} {:?}", code, message, details);
-        })),
-        Some(Box::new(|| {
-            println!("Not implemented");
-        })),
-    ))));
+    let (tx_test, rx_test) = channel::channel();
+    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultMpscChannel::new(tx_test))));
+
+    event_loop
+        .handle()
+        .insert_source(rx_test, move |event, _, data: &mut CalloopData<X11Data>| {
+            if let Msg(event) = event {
+                match event {
+                    MethodResultEnum::Success(result) => {
+                        // data.state.running.store(false, Ordering::SeqCst);
+                        println!("Received method result: {:?}", result);
+                    },
+                    MethodResultEnum::Error { code, message, details } => {
+                        println!("Received method error: {:?} {:?} {:?}", code, message, details);
+                    },
+                    MethodResultEnum::NotImplemented => {
+                        println!("Received method result: NotImplemented");
+                    },
+                }
+            };
+        }).unwrap();
+
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();

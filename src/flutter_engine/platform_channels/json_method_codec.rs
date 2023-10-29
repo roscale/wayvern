@@ -1,3 +1,4 @@
+use serde_json::Value;
 use crate::flutter_engine::platform_channels::json_message_codec::JsonMessageCodec;
 use crate::flutter_engine::platform_channels::message_codec::MessageCodec;
 use crate::flutter_engine::platform_channels::method_call::MethodCall;
@@ -45,24 +46,37 @@ impl MethodCodec<serde_json::Value> for JsonMethodCodec {
     fn decode_and_process_response_envelope_internal(&self, response: &[u8], result: &mut dyn MethodResult<serde_json::Value>) -> bool {
         (|| {
             let mut json_response = JsonMessageCodec {}.decode_message(response)?;
-            let json_response = json_response.as_array_mut()?;
+            let mut json_response = match json_response {
+                Value::Array(vec) => vec,
+                _ => return None,
+            };
+
             match json_response.len() {
                 1 => {
                     result.success(if json_response[0].is_null() {
                         None
                     } else {
-                        Some(&json_response[0])
+                        Some(json_response.remove(0))
                     });
                     Some(())
                 }
                 3 => {
-                    let code = json_response[0].as_str()?;
-                    let message = json_response[1].as_str()?;
-                    let details = if json_response[2].is_null() {
+                    let details = if let Value::Null = json_response[2] {
                         None
                     } else {
-                        Some(&json_response[2])
+                        Some(json_response.pop().unwrap())
                     };
+                    let message = if let Value::String(message) = json_response.pop().unwrap() {
+                        message
+                    } else {
+                        return None;
+                    };
+                    let code = if let Value::String(code) = json_response.pop().unwrap() {
+                        code
+                    } else {
+                        return None;
+                    };
+
                     result.error(code, message, details);
                     Some(())
                 }

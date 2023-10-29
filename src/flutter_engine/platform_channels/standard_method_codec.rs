@@ -80,7 +80,7 @@ impl MethodCodec<EncodableValue> for StandardMethodCodec {
             result.success(if let EncodableValue::Null = value {
                 None
             } else {
-                Some(&value)
+                Some(value)
             });
             true
         } else if flag == 1 {
@@ -99,9 +99,9 @@ impl MethodCodec<EncodableValue> for StandardMethodCodec {
             };
 
             if let EncodableValue::Null = details {
-                result.error(code_string.as_str(), message_string.as_str(), None);
+                result.error(code_string, message_string, None);
             } else {
-                result.error(code_string.as_str(), message_string.as_str(), Some(&details));
+                result.error(code_string, message_string, Some(details));
             }
             true
         } else {

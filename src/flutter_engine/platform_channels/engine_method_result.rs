@@ -56,13 +56,13 @@ impl<T> EngineMethodResult<T> {
 }
 
 impl<T> MethodResult<T> for EngineMethodResult<T> {
-    fn success_internal(&mut self, result: Option<&T>) {
-        let data = self.codec.encode_success_envelope(result);
+    fn success_internal(&mut self, result: Option<T>) {
+        let data = self.codec.encode_success_envelope(result.as_ref());
         self.reply_manager.send_response_data(Some(&data));
     }
 
-    fn error_internal(&mut self, code: &str, message: &str, details: Option<&T>) {
-        let data = self.codec.encode_error_envelope(code, message, details);
+    fn error_internal(&mut self, code: String, message: String, details: Option<T>) {
+        let data = self.codec.encode_error_envelope(code.as_str(), message.as_str(), details.as_ref());
         self.reply_manager.send_response_data(Some(&data));
     }
 

@@ -139,7 +139,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     leading: const Icon(Icons.favorite),
                     trailing: const Icon(Icons.more_vert),
                     onTap: () async {
-                      final a = await platform.invokeMethod("test");
+                      final a = await platform.invokeMethod("test", {"asta": 32});
                       print("received : $a");
                     },
                   ),

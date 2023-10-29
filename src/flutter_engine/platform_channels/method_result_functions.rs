@@ -28,15 +28,15 @@ impl<T> MethodResultFunctions<T> {
 }
 
 impl<T> MethodResult<T> for MethodResultFunctions<T> {
-    fn success_internal(&mut self, result: Option<&T>) {
+    fn success_internal(&mut self, result: Option<T>) {
         if let Some(on_success) = self.on_success.as_mut() {
-            on_success(result);
+            on_success(result.as_ref());
         }
     }
 
-    fn error_internal(&mut self, code: &str, message: &str, details: Option<&T>) {
+    fn error_internal(&mut self, code: String, message: String, details: Option<T>) {
         if let Some(on_error) = self.on_error.as_mut() {
-            on_error(code, message, details);
+            on_error(code.as_str(), message.as_str(), details.as_ref());
         }
     }
 
