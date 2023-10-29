@@ -31,23 +31,23 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
             event.state();
 
             let phase = if event.state() == ButtonState::Pressed {
-                let are_any_buttons_pressed = data.flutter_engine.mouse_button_tracker.are_any_buttons_pressed();
-                let _ = data.flutter_engine.mouse_button_tracker.press(event.button_code() as u16);
+                let are_any_buttons_pressed = data.state.flutter_engine().mouse_button_tracker.are_any_buttons_pressed();
+                let _ = data.state.flutter_engine_mut().mouse_button_tracker.press(event.button_code() as u16);
                 if are_any_buttons_pressed {
                     FlutterPointerPhase_kMove
                 } else {
                     FlutterPointerPhase_kDown
                 }
             } else {
-                let _ = data.flutter_engine.mouse_button_tracker.release(event.button_code() as u16);
-                if data.flutter_engine.mouse_button_tracker.are_any_buttons_pressed() {
+                let _ = data.state.flutter_engine_mut().mouse_button_tracker.release(event.button_code() as u16);
+                if data.state.flutter_engine().mouse_button_tracker.are_any_buttons_pressed() {
                     FlutterPointerPhase_kMove
                 } else {
                     FlutterPointerPhase_kUp
                 }
             };
 
-            data.flutter_engine.send_pointer_event(FlutterPointerEvent {
+            data.state.flutter_engine().send_pointer_event(FlutterPointerEvent {
                 struct_size: size_of::<FlutterPointerEvent>(),
                 phase,
                 timestamp: FlutterEngine::current_time_ms() as usize,
@@ -58,7 +58,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 scroll_delta_x: 0.0,
                 scroll_delta_y: 0.0,
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
-                buttons: data.flutter_engine.mouse_button_tracker.get_flutter_button_bitmask(),
+                buttons: data.state.flutter_engine().mouse_button_tracker.get_flutter_button_bitmask(),
                 pan_x: 0.0,
                 pan_y: 0.0,
                 scale: 0.0,
@@ -66,9 +66,9 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
             }).unwrap();
         }
         InputEvent::PointerAxis { event } => {
-            data.flutter_engine.send_pointer_event(FlutterPointerEvent {
+            data.state.flutter_engine().send_pointer_event(FlutterPointerEvent {
                 struct_size: size_of::<FlutterPointerEvent>(),
-                phase: if data.flutter_engine.mouse_button_tracker.are_any_buttons_pressed() {
+                phase: if data.state.flutter_engine().mouse_button_tracker.are_any_buttons_pressed() {
                     FlutterPointerPhase_kMove
                 } else {
                     FlutterPointerPhase_kDown
@@ -81,7 +81,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 scroll_delta_x: event.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 10.0,
                 scroll_delta_y: event.amount_discrete(input::Axis::Vertical).unwrap_or(0.0) * 10.0,
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
-                buttons: data.flutter_engine.mouse_button_tracker.get_flutter_button_bitmask(),
+                buttons: data.state.flutter_engine().mouse_button_tracker.get_flutter_button_bitmask(),
                 pan_x: 0.0,
                 pan_y: 0.0,
                 scale: 0.0,
@@ -98,7 +98,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 return;
             }
 
-            let mut messenger = BinaryMessengerImpl::new(data.flutter_engine.handle);
+            let mut messenger = BinaryMessengerImpl::new(data.state.flutter_engine().handle);
             let codec = Rc::new(StandardMethodCodec::new());
             let mut method_channel = MethodChannel::new(&mut messenger, "test_channel".to_string(), codec);
             method_channel.invoke_method("test", Some(Box::new(EncodableValue::Map(vec![
@@ -132,9 +132,9 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
 }
 
 fn send_motion_event(data: &mut CalloopData<impl Backend>) {
-    data.flutter_engine.send_pointer_event(FlutterPointerEvent {
+    data.state.flutter_engine().send_pointer_event(FlutterPointerEvent {
         struct_size: size_of::<FlutterPointerEvent>(),
-        phase: if data.flutter_engine.mouse_button_tracker.are_any_buttons_pressed() {
+        phase: if data.state.flutter_engine().mouse_button_tracker.are_any_buttons_pressed() {
             FlutterPointerPhase_kMove
         } else {
             FlutterPointerPhase_kHover
@@ -147,7 +147,7 @@ fn send_motion_event(data: &mut CalloopData<impl Backend>) {
         scroll_delta_x: 0.0,
         scroll_delta_y: 0.0,
         device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
-        buttons: data.flutter_engine.mouse_button_tracker.get_flutter_button_bitmask(),
+        buttons: data.state.flutter_engine().mouse_button_tracker.get_flutter_button_bitmask(),
         pan_x: 0.0,
         pan_y: 0.0,
         scale: 0.0,

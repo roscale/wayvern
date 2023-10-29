@@ -67,7 +67,6 @@ pub struct FlutterState {
 
 pub struct CalloopData<BackendData: Backend + 'static + ?Sized> {
     pub state: ServerState<BackendData>,
-    pub flutter_engine: Box<FlutterEngine>,
     pub tx_fbo: channel::Sender<Option<Dmabuf>>,
     pub baton: Option<flutter_engine::Baton>,
 }

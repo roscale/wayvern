@@ -1,22 +1,29 @@
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_shm, delegate_xdg_shell};
+use smithay::backend::allocator::Buffer;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
-use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_shm, delegate_xdg_shell};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Clock, Monotonic, Serial};
+use smithay::utils::{Clock, Monotonic, Rectangle, Serial};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
-use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState};
+use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, get_dmabuf, ImportError};
+use smithay::wayland::shell::xdg;
+use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgShellHandler, XdgShellState};
 use smithay::wayland::shm::{ShmHandler, ShmState};
 
 use crate::{Backend, CalloopData, ClientState};
+use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use crate::flutter_engine::wayland_messages::{SurfaceCommitMessage, XdgSurfaceCommitMessage};
 
 pub struct ServerState<BackendData: Backend + 'static + ?Sized> {
     pub running: Arc<AtomicBool>,
@@ -24,6 +31,7 @@ pub struct ServerState<BackendData: Backend + 'static + ?Sized> {
     pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
     pub clock: Clock<Monotonic>,
     pub backend_data: Box<BackendData>,
+    pub flutter_engine: Option<Box<FlutterEngine>>,
     // space: Space<WindowElement>,
 
     pub mouse_position: (f64, f64),
@@ -32,6 +40,15 @@ pub struct ServerState<BackendData: Backend + 'static + ?Sized> {
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
+}
+
+impl<BackendData: Backend + 'static + ?Sized> ServerState<BackendData> {
+    pub fn flutter_engine(&self) -> &FlutterEngine {
+        self.flutter_engine.as_ref().unwrap()
+    }
+    pub fn flutter_engine_mut(&mut self) -> &mut FlutterEngine {
+        self.flutter_engine.as_mut().unwrap()
+    }
 }
 
 // Macros used to delegate protocol handling to types in the app state.
@@ -66,6 +83,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             compositor_state,
             xdg_shell_state,
             shm_state,
+            flutter_engine: None,
         }
     }
 }
@@ -106,6 +124,62 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
+
+        let commit_message = with_states(surface, |surface_data| {
+            let role = surface_data.role;
+            let state = surface_data.cached_state.current::<SurfaceAttributes>();
+
+            let dmabuf = state.buffer
+                .as_ref()
+                .and_then(|assignment| match assignment {
+                    BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                    _ => None,
+                });
+
+            SurfaceCommitMessage {
+                view_id: 0, // TODO
+                role,
+                texture_id: 0, // TODO
+                buffer_delta: state.buffer_delta,
+                buffer_size: dmabuf.as_ref().map(|dmabuf| dmabuf.size()),
+                scale: state.buffer_scale,
+                input_region: state.input_region.clone(),
+                xdg_surface: match role {
+                    Some(xdg::XDG_TOPLEVEL_ROLE | xdg::XDG_POPUP_ROLE) => {
+                        let geometry = surface_data
+                            .cached_state
+                            .current::<SurfaceCachedState>()
+                            .geometry;
+
+                        Some(XdgSurfaceCommitMessage {
+                            mapped: false,
+                            role,
+                            geometry: match geometry {
+                                Some(geometry) => Some(geometry),
+                                None => Some(Rectangle {
+                                    loc: (0, 0).into(),
+                                    size: match dmabuf {
+                                        Some(dmabuf) => (dmabuf.size().w, dmabuf.size().h).into(),
+                                        None => (0, 0).into(),
+                                    },
+                                }),
+                            },
+                        })
+                    },
+                    _ => None,
+                },
+            }
+        });
+
+        let commit_message = commit_message.serialize();
+
+        let codec = Rc::new(StandardMethodCodec::new());
+        let mut method_channel = MethodChannel::new(
+            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
+            "platform".to_string(),
+            codec,
+        );
+        method_channel.invoke_method("commit_surface", Some(Box::new(commit_message)), None);
     }
 }
 

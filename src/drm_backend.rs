@@ -150,10 +150,12 @@ pub fn run_drm_backend() {
         },
     ) = FlutterEngine::new(egl_context, &state).unwrap();
 
+    state.flutter_engine = Some(flutter_engine);
+
     let mut baton = None;
 
     // Initialize already present connectors.
-    state.device_changed(&flutter_engine, primary_gpu);
+    state.device_changed(primary_gpu);
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -179,7 +181,7 @@ pub fn run_drm_backend() {
         .insert_source(udev_backend, move |event, _, data| {
             if let UdevEvent::Changed { device_id } = event {
                 if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.state.device_changed(&data.flutter_engine, node)
+                    data.state.device_changed(node)
                 }
             }
         })
@@ -200,7 +202,7 @@ pub fn run_drm_backend() {
             return;
         }
         if let Some(baton) = data.baton.take() {
-            data.flutter_engine.on_vsync(baton).unwrap();
+            data.state.flutter_engine().on_vsync(baton).unwrap();
         }
     }).unwrap();
 
@@ -224,7 +226,6 @@ pub fn run_drm_backend() {
             state,
             tx_fbo,
             baton,
-            flutter_engine,
         };
 
         let result = event_loop.dispatch(None, &mut calloop_data);
@@ -233,7 +234,6 @@ pub fn run_drm_backend() {
             state,
             tx_fbo,
             baton,
-            flutter_engine,
         } = calloop_data;
 
         if result.is_err() {
@@ -395,7 +395,7 @@ impl ServerState<DrmBackend> {
                             let _ = surface.compositor.frame_submitted();
                         }
                         if let Some(baton) = data.baton.take() {
-                            data.flutter_engine.on_vsync(baton).unwrap();
+                            data.state.flutter_engine().on_vsync(baton).unwrap();
                         }
                     }
                     DrmEvent::Error(error) => {
@@ -450,7 +450,7 @@ impl ServerState<DrmBackend> {
         Ok(())
     }
 
-    fn connector_connected(&mut self, flutter_engine: &FlutterEngine, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
+    fn connector_connected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
         let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
             device
         } else {
@@ -588,7 +588,7 @@ impl ServerState<DrmBackend> {
         device.surfaces.insert(crtc, surface);
 
         device.swapchain.resize(wl_mode.size.w as u32, wl_mode.size.h as u32);
-        flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
+        self.flutter_engine().send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
     }
 
     fn connector_disconnected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
@@ -609,7 +609,7 @@ impl ServerState<DrmBackend> {
         }
     }
 
-    fn device_changed(&mut self, flutter_engine: &FlutterEngine, node: DrmNode) {
+    fn device_changed(&mut self, node: DrmNode) {
         let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
             device
         } else {
@@ -618,7 +618,7 @@ impl ServerState<DrmBackend> {
 
         for event in device.drm_scanner.scan_connectors(&device.drm_device) {
             match event {
-                DrmScanEvent::Connected { connector, crtc: Some(crtc) } => self.connector_connected(flutter_engine, node, connector, crtc),
+                DrmScanEvent::Connected { connector, crtc: Some(crtc) } => self.connector_connected(node, connector, crtc),
                 DrmScanEvent::Disconnected { connector, crtc: Some(crtc) } => self.connector_disconnected(node, connector, crtc),
                 _ => {}
             }

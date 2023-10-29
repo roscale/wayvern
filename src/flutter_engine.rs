@@ -58,6 +58,7 @@ mod callbacks;
 pub mod embedder;
 pub mod platform_channels;
 pub mod task_runner;
+pub mod wayland_messages;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
@@ -217,7 +218,7 @@ impl FlutterEngine {
         this.handle = flutter_engine;
 
         let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |deadline, _, data: &mut CalloopData<BackendData>| {
-            let duration = data.flutter_engine.task_runner.execute_expired_tasks(move |task| {
+            let duration = data.state.flutter_engine_mut().task_runner.execute_expired_tasks(move |task| {
                 unsafe { FlutterEngineRunTask(flutter_engine, task as *const _) };
             });
             TimeoutAction::ToDuration(duration)
