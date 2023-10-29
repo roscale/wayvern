@@ -9,6 +9,9 @@ void main() {
   platform.setMethodCallHandler((call) async {
     if (call.method == 'test') {
       print(call.arguments);
+      return [1, 2, "maybe"];
+    } else {
+      return "Huh?";
     }
   });
 

@@ -1,4 +1,5 @@
 #[repr(u8)]
+#[derive(Debug)]
 pub enum EncodableValue {
     Null = 0,
     Bool(bool),
@@ -32,7 +33,7 @@ impl EncodableValue {
 
 // TODO: It should be generic over T, but the codec doesn't support custom encodable values,
 // so I don't think it's worth implementing this because it's more work than it's worth.
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct CustomEncodableValue {}
 
 // impl<T: Any + Copy> CustomEncodableValue<T> {

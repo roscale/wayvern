@@ -41,8 +41,8 @@ use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState}
 use crate::flutter_engine::FlutterEngine;
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::engine_method_result::EngineMethodResult;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::method_result_functions::MethodResultFunctions;
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
 
@@ -152,16 +152,17 @@ pub fn run_x11_client() {
         Rc::new(StandardMethodCodec::new()),
     );
 
-    method_channel.set_method_call_handler(Some(Box::new(|method_call, mut result| {
-        match method_call.method() {
-            "test" => {
-                result.success(Some(&EncodableValue::String("Hello from Rust !".to_string())));
-            }
-            _ => {
-                result.not_implemented();
-            }
-        }
-    })));
+    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultFunctions::<EncodableValue>::new(
+        Some(Box::new(|result| {
+            println!("Success: {:?}", result);
+        })),
+        Some(Box::new(|code, message, details| {
+            println!("Error: {} {} {:?}", code, message, details);
+        })),
+        Some(Box::new(|| {
+            println!("Not implemented");
+        })),
+    ))));
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();

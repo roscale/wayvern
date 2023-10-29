@@ -15,3 +15,4 @@ pub mod standard_codec_serializer;
 pub mod standard_message_codec;
 pub mod standard_method_codec;
 pub mod byte_buffer_streams;
+pub mod method_result_functions;

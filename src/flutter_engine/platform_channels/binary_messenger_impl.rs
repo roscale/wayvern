@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
@@ -41,7 +41,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
             let response_handle = message.response_handle;
             let engine_handle = self.flutter_engine;
             let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<&[u8]>| {
-                let data = reply.map(|v| v.as_ptr()).unwrap_or(std::ptr::null());
+                let data = reply.map(|v| v.as_ptr()).unwrap_or(null());
                 let data_size = reply.map(|v| v.len()).unwrap_or(0);
                 unsafe { FlutterEngineSendPlatformMessageResponse(engine_handle, response_handle, data, data_size) };
             }));
@@ -56,7 +56,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
             let captures = Box::into_raw(Box::new(Captures {
                 reply,
             }));
-            let result = send_message_with_reply(self.flutter_engine, channel, message, Some(message_reply), captures as *mut ::std::os::raw::c_void);
+            let result = send_message_with_reply(self.flutter_engine, channel, message, Some(message_reply), captures as *mut c_void);
             if !result {
                 let _ = unsafe { Box::from_raw(captures) };
             }
@@ -74,7 +74,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
     }
 }
 
-fn send_message_with_reply(flutter_engine: FlutterEngineHandle, channel: &str, message: &[u8], reply: FlutterDataCallback, user_data: *mut ::std::os::raw::c_void) -> bool {
+fn send_message_with_reply(flutter_engine: FlutterEngineHandle, channel: &str, message: &[u8], reply: FlutterDataCallback, user_data: *mut c_void) -> bool {
     let mut response_handle = null_mut();
     if reply.is_some() && !user_data.is_null() {
         let result = unsafe { FlutterPlatformMessageCreateResponseHandle(flutter_engine, reply, user_data, &mut response_handle) };
