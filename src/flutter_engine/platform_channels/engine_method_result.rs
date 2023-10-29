@@ -1,4 +1,5 @@
 use std::rc::Rc;
+
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryReply;
 use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
@@ -33,7 +34,7 @@ impl ReplyManager {
 
 impl Drop for ReplyManager {
     fn drop(&mut self) {
-        if self.reply_handler.is_none() {
+        if self.reply_handler.is_some() {
             eprintln!("Warning: Failed to respond to a message. This is a memory leak.");
         }
     }

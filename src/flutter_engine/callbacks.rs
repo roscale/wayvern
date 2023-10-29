@@ -2,12 +2,13 @@ use std::ffi::c_void;
 
 use tracing::error;
 
-use crate::flutter_engine::{Baton, FlutterEngineData};
-use crate::flutter_engine::embedder::{FlutterDamage, FlutterPresentInfo, FlutterRect, FlutterTransformation};
+use crate::flutter_engine::{Baton, FlutterEngine};
+use crate::flutter_engine::embedder::{FlutterDamage, FlutterPlatformMessage, FlutterPresentInfo, FlutterRect, FlutterTask, FlutterTransformation};
+use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 
 pub unsafe extern "C" fn make_current(user_data: *mut c_void) -> bool {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    match state.main_egl_context.make_current() {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    match flutter_engine.data.main_egl_context.make_current() {
         Ok(()) => true,
         Err(err) => {
             error!("{}", err);
@@ -17,8 +18,8 @@ pub unsafe extern "C" fn make_current(user_data: *mut c_void) -> bool {
 }
 
 pub unsafe extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    match state.resource_egl_context.make_current() {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    match flutter_engine.data.resource_egl_context.make_current() {
         Ok(()) => true,
         Err(err) => {
             error!("{}", err);
@@ -28,8 +29,8 @@ pub unsafe extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
 }
 
 pub unsafe extern "C" fn clear_current(user_data: *mut c_void) -> bool {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    match state.main_egl_context.unbind() {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    match flutter_engine.data.main_egl_context.unbind() {
         Ok(()) => true,
         Err(err) => {
             error!("{}", err);
@@ -39,21 +40,21 @@ pub unsafe extern "C" fn clear_current(user_data: *mut c_void) -> bool {
 }
 
 pub unsafe extern "C" fn fbo_callback(user_data: *mut c_void) -> u32 {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    if state.channels.tx_request_fbo.send(()).is_err() {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    if flutter_engine.data.channels.tx_request_fbo.send(()).is_err() {
         return 0;
     }
-    if let Ok(Some(dmabuf)) = state.channels.rx_fbo.recv() {
-        state.framebuffer_importer.import_framebuffer(&state.main_egl_context, dmabuf).unwrap_or(0)
+    if let Ok(Some(dmabuf)) = flutter_engine.data.channels.rx_fbo.recv() {
+        flutter_engine.data.framebuffer_importer.import_framebuffer(&flutter_engine.data.main_egl_context, dmabuf).unwrap_or(0)
     } else {
         0
     }
 }
 
 pub unsafe extern "C" fn present_with_info(user_data: *mut c_void, _frame_present_info: *const FlutterPresentInfo) -> bool {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    state.gl.Finish();
-    state.channels.tx_present.send(()).is_ok()
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    flutter_engine.data.gl.Finish();
+    flutter_engine.data.channels.tx_present.send(()).is_ok()
 }
 
 pub unsafe extern "C" fn populate_existing_damage(_user_data: *mut c_void, _fbo_id: isize, existing_damage: *mut FlutterDamage) {
@@ -77,13 +78,13 @@ pub unsafe extern "C" fn populate_existing_damage(_user_data: *mut c_void, _fbo_
 }
 
 pub unsafe extern "C" fn surface_transformation(user_data: *mut c_void) -> FlutterTransformation {
-    let state = &mut *(user_data as *mut FlutterEngineData);
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
 
-    while let Ok(output_height) = state.channels.rx_output_height.try_recv() {
-        state.output_height = Some(output_height);
+    while let Ok(output_height) = flutter_engine.data.channels.rx_output_height.try_recv() {
+        flutter_engine.data.output_height = Some(output_height);
     }
 
-    match state.output_height {
+    match flutter_engine.data.output_height {
         Some(output_height) => FlutterTransformation {
             scaleX: 1.0,
             skewX: 0.0,
@@ -110,8 +111,25 @@ pub unsafe extern "C" fn surface_transformation(user_data: *mut c_void) -> Flutt
 }
 
 pub unsafe extern "C" fn vsync_callback(user_data: *mut std::os::raw::c_void, baton: isize) {
-    let state = &mut *(user_data as *mut FlutterEngineData);
-    let _ = state.channels.tx_baton.send(Baton(baton));
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    let _ = flutter_engine.data.channels.tx_baton.send(Baton(baton));
+}
+
+pub unsafe extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    flutter_engine.current_thread_id == std::thread::current().id()
+}
+
+pub unsafe extern "C" fn post_task_callback(task: FlutterTask, target_time: u64, user_data: *mut c_void) {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    let timeout = flutter_engine.task_runner.enqueue_task(task, target_time);
+    flutter_engine.task_runner.reschedule_timer.send(timeout).unwrap();
+}
+
+pub unsafe extern "C" fn platform_message_callback(message: *const FlutterPlatformMessage, user_data: *mut c_void) {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    let message = &*message;
+    flutter_engine.binary_messenger.as_mut().unwrap().handle_message(message);
 }
 
 pub enum FlutterEngineIntent {

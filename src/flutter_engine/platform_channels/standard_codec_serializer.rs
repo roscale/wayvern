@@ -74,7 +74,7 @@ impl EncodableValue {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub(crate) struct StandardCodecSerializer;
 
 impl StandardCodecSerializer {

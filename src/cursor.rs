@@ -2,8 +2,8 @@ use std::{io::Read, time::Duration};
 
 use tracing::warn;
 use xcursor::{
-    parser::{parse_xcursor, Image},
     CursorTheme,
+    parser::{Image, parse_xcursor},
 };
 
 pub struct Cursor {

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+const platform = MethodChannel('test_channel');
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  const platform = MethodChannel('test_channel');
 
   platform.setMethodCallHandler((call) async {
     if (call.method == 'test') {
@@ -67,7 +68,10 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
 
-  void _incrementCounter() {
+  void _incrementCounter() async {
+    final a = await platform.invokeMethod("test");
+    print("received : $a");
+
     setState(() {
       // This call to setState tells the Flutter framework that something has
       // changed in this State, which causes it to rerun the build method below
@@ -131,7 +135,10 @@ class _MyHomePageState extends State<MyHomePage> {
                     subtitle: Text('Subtitle $i'),
                     leading: const Icon(Icons.favorite),
                     trailing: const Icon(Icons.more_vert),
-                    onTap: () {},
+                    onTap: () async {
+                      final a = await platform.invokeMethod("test");
+                      print("received : $a");
+                    },
                   ),
               ],
             ))

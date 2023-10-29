@@ -1,7 +1,9 @@
-use std::ffi::{c_int, c_void, CString};
+use std::ffi::{c_int, CString};
 use std::mem::size_of;
+use std::ops::{Deref, DerefMut};
 use std::os::unix::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
+use std::time::Duration;
 
 use smithay::{
     backend::{
@@ -16,8 +18,11 @@ use smithay::{
     reexports::calloop::channel,
     utils::{Physical, Size},
 };
+use smithay::reexports::calloop::channel::Event::Msg;
+use smithay::reexports::calloop::Dispatcher;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
-use crate::{Backend, flutter_engine::{
+use crate::{Backend, CalloopData, flutter_engine::{
     callbacks::{
         clear_current,
         fbo_callback,
@@ -40,11 +45,14 @@ use crate::{Backend, flutter_engine::{
         FlutterRendererConfig__bindgen_ty_1,
         FlutterWindowMetricsEvent,
     },
-}, GlobalState};
-use crate::flutter_engine::callbacks::{populate_existing_damage, vsync_callback};
-use crate::flutter_engine::embedder::{FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTask, FlutterTaskRunnerDescription};
+}, ServerState};
+use crate::flutter_engine::callbacks::{platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
+use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTask, FlutterTaskRunnerDescription};
+use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
+use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
 use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
+use crate::mouse_button_tracker::MouseButtonTracker;
 
 mod callbacks;
 pub mod embedder;
@@ -56,9 +64,11 @@ pub mod task_runner;
 /// - Send is not implemented because all its methods must be called from the thread the engine was created.
 pub struct FlutterEngine {
     pub handle: FlutterEngineHandle,
-    data: *mut FlutterEngineData,
+    data: FlutterEngineData,
     pub task_runner: TaskRunner,
     current_thread_id: std::thread::ThreadId,
+    pub(crate) mouse_button_tracker: MouseButtonTracker,
+    pub binary_messenger: Option<BinaryMessengerImpl>,
 }
 
 /// I don't want people to clone it because it's UB to call [FlutterEngine::on_vsync] multiple times
@@ -66,21 +76,13 @@ pub struct FlutterEngine {
 pub struct Baton(isize);
 
 impl FlutterEngine {
-    pub fn new(task_runner: TaskRunner) -> Self {
-        Self {
-            handle: null_mut(),
-            data: null_mut(),
-            task_runner,
-            current_thread_id: std::thread::current().id(),
-        }
-    }
-
-    pub fn run(&mut self, user_data: *mut GlobalState<dyn Backend + 'static>, root_egl_context: &EGLContext) -> Result<EmbedderChannels, Box<dyn std::error::Error>> {
+    pub fn new<BackendData: Backend + 'static>(root_egl_context: &EGLContext, server_state: &ServerState<BackendData>) -> Result<(Box<Self>, EmbedderChannels), Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
         let (tx_output_height, rx_output_height) = channel::channel::<u16>();
         let (tx_baton, rx_baton) = channel::channel::<Baton>();
+        let (reschedule_task_runner_timer_tx, reschedule_task_runner_timer_rx) = channel::channel::<Duration>();
 
         let flutter_engine_channels = FlutterEngineChannels {
             tx_present,
@@ -98,9 +100,6 @@ impl FlutterEngine {
             rx_baton,
         };
 
-        let flutter_engine_data = Box::new(FlutterEngineData::new(root_egl_context, flutter_engine_channels)?);
-        let flutter_engine_data = Box::into_raw(flutter_engine_data);
-
         let assets_path = CString::new(if option_env!("BUNDLE").is_some() { "data/flutter_assets" } else { "wayvern_flutter/build/linux/x64/debug/bundle/data/flutter_assets" })?;
         let icu_data_path = CString::new(if option_env!("BUNDLE").is_some() { "data/icudtl.dat" } else { "wayvern_flutter/build/linux/x64/debug/bundle/data/icudtl.dat" })?;
         let executable_path = CString::new(std::fs::canonicalize("/proc/self/exe")?.as_os_str().as_bytes())?;
@@ -113,12 +112,28 @@ impl FlutterEngine {
             disable_service_auth_codes.as_ptr(),
         ];
 
-        FlutterTaskRunnerDescription {
+        let mut this = Box::new(Self {
+            handle: null_mut(),
+            data: FlutterEngineData::new(root_egl_context, flutter_engine_channels)?,
+            task_runner: TaskRunner::new(reschedule_task_runner_timer_tx),
+            current_thread_id: std::thread::current().id(),
+            mouse_button_tracker: MouseButtonTracker::new(),
+            binary_messenger: None,
+        });
+
+        let task_runner_description = FlutterTaskRunnerDescription {
             struct_size: size_of::<FlutterTaskRunnerDescription>(),
-            user_data: user_data as *mut _,
+            user_data: this.deref_mut() as *const _ as *mut _,
             runs_task_on_current_thread_callback: Some(runs_task_on_current_thread_callback),
             post_task_callback: Some(post_task_callback),
             identifier: 1,
+        };
+
+        let task_runners = FlutterCustomTaskRunners {
+            struct_size: size_of::<FlutterCustomTaskRunners>(),
+            platform_task_runner: &task_runner_description,
+            render_task_runner: null(),
+            thread_priority_setter: None,
         };
 
         let project_args = FlutterProjectArgs {
@@ -129,7 +144,7 @@ impl FlutterEngine {
             icu_data_path: icu_data_path.as_ptr(),
             command_line_argc: command_line_argv.len() as c_int,
             command_line_argv: command_line_argv.as_ptr(),
-            platform_message_callback: None,
+            platform_message_callback: Some(platform_message_callback),
             vm_snapshot_data: null(),
             vm_snapshot_data_size: 0,
             vm_snapshot_instructions: null(),
@@ -145,7 +160,7 @@ impl FlutterEngine {
             is_persistent_cache_read_only: false,
             vsync_callback: Some(vsync_callback),
             custom_dart_entrypoint: null(),
-            custom_task_runners: null(),
+            custom_task_runners: &task_runners,
             shutdown_dart_vm_when_done: true,
             compositor: null(),
             dart_old_gen_heap_size: 0,
@@ -190,7 +205,7 @@ impl FlutterEngine {
                 FLUTTER_ENGINE_VERSION as usize,
                 &renderer_config,
                 &project_args,
-                flutter_engine_data as *mut c_void,
+                this.deref_mut() as *const _ as *mut _,
                 &mut flutter_engine,
             )
         };
@@ -199,10 +214,27 @@ impl FlutterEngine {
             return Err(format!("Could not initalize the Flutter engine, error {result}").into());
         }
 
-        self.handle = flutter_engine;
-        self.data = flutter_engine_data;
+        this.handle = flutter_engine;
 
-        Ok(embedder_channels)
+        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |deadline, _, data: &mut CalloopData<BackendData>| {
+            let duration = data.flutter_engine.task_runner.execute_expired_tasks(&move |task| {
+                unsafe { FlutterEngineRunTask(flutter_engine, task as *const _) };
+            });
+            TimeoutAction::ToDuration(duration)
+        });
+
+        let task_runner_timer_registration_token = server_state.loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
+
+        server_state.loop_handle.insert_source(reschedule_task_runner_timer_rx, move |event, _, data: &mut CalloopData<BackendData>| {
+            if let Msg(duration) = event {
+                task_runner_timer_dispatcher.as_source_mut().set_duration(duration);
+                data.state.loop_handle.update(&task_runner_timer_registration_token).unwrap();
+            }
+        }).unwrap();
+
+        this.binary_messenger = Some(BinaryMessengerImpl::new(flutter_engine));
+
+        Ok((this, embedder_channels))
     }
 
     pub fn current_time_ns() -> u64 {
@@ -258,24 +290,10 @@ impl FlutterEngine {
     }
 }
 
-extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
-    let state = unsafe { &*(user_data as *const GlobalState<dyn Backend>) };
-    state.flutter_engine.current_thread_id == std::thread::current().id()
-}
-
-extern "C" fn post_task_callback(task: FlutterTask, target_time: u64, user_data: *mut c_void) {
-    let mut state = unsafe { &mut *(user_data as *mut GlobalState<dyn Backend + 'static>) };
-    let timeout = state.flutter_engine.task_runner.enqueue_task(task, target_time);
-    state.flutter_engine.task_runner.reschedule_timer.send(timeout).unwrap();
-}
-
 impl Drop for FlutterEngine {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             let _ = unsafe { FlutterEngineShutdown(self.handle) };
-        }
-        if !self.data.is_null() {
-            let _ = unsafe { Box::from_raw(self.data) };
         }
     }
 }

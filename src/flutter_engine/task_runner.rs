@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
-use smithay::reexports::calloop::{channel};
+
+use smithay::reexports::calloop::channel;
 
 use crate::flutter_engine::embedder::{FlutterEngineGetCurrentTime, FlutterTask};
 
@@ -51,8 +52,10 @@ impl TaskRunner {
     }
 
     pub fn enqueue_task(&mut self, task: FlutterTask, target_time: TargetTime) -> Duration {
-        let mut tasks = self.tasks.lock().unwrap();
-        tasks.push(Task(task, target_time));
+        {
+            let mut tasks = self.tasks.lock().unwrap();
+            tasks.push(Task(task, target_time));
+        }
         self.reschedule_timer()
     }
 
@@ -83,8 +86,10 @@ impl TaskRunner {
 
         match tasks.peek() {
             None => {
+                // Just set the timer to an arbitrary long duration.
                 // We don't want to drop the timer because it will rescheduled when new tasks arrive.
-                Duration::MAX
+                // For some reason Duration::MAX doesn't work so I've randomly chosen 1 minute.
+                Duration::from_secs(60)
             }
             Some(Task(_, target_time)) => {
                 let now = unsafe { FlutterEngineGetCurrentTime() };

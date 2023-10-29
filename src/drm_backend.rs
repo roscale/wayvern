@@ -39,7 +39,9 @@ use tracing::{error, info, warn};
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use smithay_drm_extras::edid::EdidInfo;
 
-use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, GlobalState};
+use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
+use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::input_handling::handle_input;
 
 pub struct DrmBackend {
@@ -78,7 +80,7 @@ const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8
 
 pub fn run_drm_backend() {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display: Display<GlobalState<DrmBackend>> = Display::new().unwrap();
+    let display: Display<ServerState<DrmBackend>> = Display::new().unwrap();
     let mut display_handle = display.handle();
 
     let (session, _notifier) = match LibSeatSession::new() {
@@ -119,7 +121,7 @@ pub fn run_drm_backend() {
     libinput_context.udev_assign_seat(&session.seat()).unwrap();
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
-    let mut state = GlobalState::new(
+    let mut state = ServerState::new(
         display,
         event_loop.handle(),
         DrmBackend {
@@ -134,19 +136,24 @@ pub fn run_drm_backend() {
     // Initialize GPU state.
     state.gpu_added(primary_gpu, &primary_gpu.dev_path().unwrap()).unwrap();
 
-    let state_ptr = &mut state as *const _ as *mut _;
+    let egl_context = state.backend_data.get_gpu_data().gles_renderer.egl_context();
 
     // Start the Flutter engine.
-    let EmbedderChannels {
-        rx_present,
-        rx_request_fbo,
-        mut tx_fbo,
-        tx_output_height: _,
-        rx_baton,
-    } = state.flutter_engine.run(state_ptr, state.backend_data.get_gpu_data().gles_renderer.egl_context()).unwrap();
+    let (
+        mut flutter_engine,
+        EmbedderChannels {
+            rx_present,
+            rx_request_fbo,
+            mut tx_fbo,
+            tx_output_height: _,
+            rx_baton,
+        },
+    ) = FlutterEngine::new(egl_context, &state).unwrap();
+
+    let mut baton = None;
 
     // Initialize already present connectors.
-    state.device_changed(primary_gpu);
+    state.device_changed(&flutter_engine, primary_gpu);
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -172,7 +179,7 @@ pub fn run_drm_backend() {
         .insert_source(udev_backend, move |event, _, data| {
             if let UdevEvent::Changed { device_id } = event {
                 if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.state.device_changed(node)
+                    data.state.device_changed(&data.flutter_engine, node)
                 }
             }
         })
@@ -185,8 +192,6 @@ pub fn run_drm_backend() {
         wl_shm::Format::Xrgb8888,
     ]);
 
-    let mut baton = None;
-
     event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
         if let Event::Msg(baton) = baton {
             data.baton = Some(baton);
@@ -195,7 +200,7 @@ pub fn run_drm_backend() {
             return;
         }
         if let Some(baton) = data.baton.take() {
-            data.state.flutter_engine.on_vsync(baton).unwrap();
+            data.flutter_engine.on_vsync(baton).unwrap();
         }
     }).unwrap();
 
@@ -219,6 +224,7 @@ pub fn run_drm_backend() {
             state,
             tx_fbo,
             baton,
+            flutter_engine,
         };
 
         let result = event_loop.dispatch(None, &mut calloop_data);
@@ -227,6 +233,7 @@ pub fn run_drm_backend() {
             state,
             tx_fbo,
             baton,
+            flutter_engine,
         } = calloop_data;
 
         if result.is_err() {
@@ -240,7 +247,7 @@ pub fn run_drm_backend() {
     drop(tx_fbo);
 }
 
-impl GlobalState<DrmBackend> {
+impl ServerState<DrmBackend> {
     pub fn update_crtc_planes(&mut self) {
         let primary_gpu = self.backend_data.primary_gpu;
         let gpu_data = if let Some(gpu_data) = self.backend_data.gpus.get_mut(&primary_gpu) {
@@ -362,7 +369,7 @@ enum DeviceAddError {
     AddNode(egl::Error),
 }
 
-impl GlobalState<DrmBackend> {
+impl ServerState<DrmBackend> {
     fn gpu_added(&mut self, node: DrmNode, path: &Path) -> Result<(), DeviceAddError> {
         // Try to open the device
         let fd = self
@@ -388,7 +395,7 @@ impl GlobalState<DrmBackend> {
                             let _ = surface.compositor.frame_submitted();
                         }
                         if let Some(baton) = data.baton.take() {
-                            data.state.flutter_engine.on_vsync(baton).unwrap();
+                            data.flutter_engine.on_vsync(baton).unwrap();
                         }
                     }
                     DrmEvent::Error(error) => {
@@ -443,7 +450,7 @@ impl GlobalState<DrmBackend> {
         Ok(())
     }
 
-    fn connector_connected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
+    fn connector_connected(&mut self, flutter_engine: &FlutterEngine, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
         let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
             device
         } else {
@@ -507,7 +514,7 @@ impl GlobalState<DrmBackend> {
                 model,
             },
         );
-        let global = output.create_global::<GlobalState<DrmBackend>>(&self.display_handle);
+        let global = output.create_global::<ServerState<DrmBackend>>(&self.display_handle);
 
         output.set_preferred(wl_mode);
         output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
@@ -581,7 +588,7 @@ impl GlobalState<DrmBackend> {
         device.surfaces.insert(crtc, surface);
 
         device.swapchain.resize(wl_mode.size.w as u32, wl_mode.size.h as u32);
-        self.flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
+        flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
     }
 
     fn connector_disconnected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
@@ -602,7 +609,7 @@ impl GlobalState<DrmBackend> {
         }
     }
 
-    fn device_changed(&mut self, node: DrmNode) {
+    fn device_changed(&mut self, flutter_engine: &FlutterEngine, node: DrmNode) {
         let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
             device
         } else {
@@ -611,7 +618,7 @@ impl GlobalState<DrmBackend> {
 
         for event in device.drm_scanner.scan_connectors(&device.drm_device) {
             match event {
-                DrmScanEvent::Connected { connector, crtc: Some(crtc) } => self.connector_connected(node, connector, crtc),
+                DrmScanEvent::Connected { connector, crtc: Some(crtc) } => self.connector_connected(flutter_engine, node, connector, crtc),
                 DrmScanEvent::Disconnected { connector, crtc: Some(crtc) } => self.connector_disconnected(node, connector, crtc),
                 _ => {}
             }

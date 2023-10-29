@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 use log::{error, warn};
@@ -36,13 +37,18 @@ use smithay::{
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 
-use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, GlobalState};
+use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
+use crate::flutter_engine::FlutterEngine;
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine::platform_channels::engine_method_result::EngineMethodResult;
+use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display: Display<GlobalState<X11Data>> = Display::new().unwrap();
+    let display: Display<ServerState<X11Data>> = Display::new().unwrap();
     let mut display_handle = display.handle();
 
     let x11_backend = x11::X11Backend::new().expect("Failed to initilize X11 backend");
@@ -114,7 +120,7 @@ pub fn run_x11_client() {
         },
     };
 
-    let mut state = GlobalState::new(
+    let mut state = ServerState::new(
         display,
         event_loop.handle(),
         X11Data {
@@ -129,19 +135,37 @@ pub fn run_x11_client() {
         },
     );
 
-    let state_ptr = &mut state as *const _ as *mut _;
+    let (
+        mut flutter_engine,
+        EmbedderChannels {
+            rx_present,
+            rx_request_fbo,
+            mut tx_fbo,
+            tx_output_height,
+            rx_baton,
+        },
+    ) = FlutterEngine::new(&egl_context, &state).unwrap();
 
-    let EmbedderChannels {
-        rx_present,
-        rx_request_fbo,
-        mut tx_fbo,
-        tx_output_height,
-        rx_baton,
-    } = state.flutter_engine.run(state_ptr, &egl_context).unwrap();
+    let mut method_channel: MethodChannel<EncodableValue> = MethodChannel::new(
+        flutter_engine.binary_messenger.as_mut().unwrap(),
+        "test_channel".to_string(),
+        Rc::new(StandardMethodCodec::new()),
+    );
+
+    method_channel.set_method_call_handler(Some(Box::new(|method_call, mut result| {
+        match method_call.method() {
+            "test" => {
+                result.success(Some(&EncodableValue::String("Hello from Rust !".to_string())));
+            }
+            _ => {
+                result.not_implemented();
+            }
+        }
+    })));
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
-    state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+    flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -167,12 +191,12 @@ pub fn run_x11_client() {
                 };
 
                 let _ = tx_output_height.send(new_size.h);
-                data.state.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+                data.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
                 data.state.is_next_vblank_scheduled = false;
                 if let Some(baton) = data.baton.take() {
-                    data.state.flutter_engine.on_vsync(baton).unwrap();
+                    data.flutter_engine.on_vsync(baton).unwrap();
                 }
             }
             X11Event::Input(event) => handle_input(&event, data),
@@ -187,7 +211,7 @@ pub fn run_x11_client() {
             return;
         }
         if let Some(baton) = data.baton.take() {
-            data.state.flutter_engine.on_vsync(baton).unwrap();
+            data.flutter_engine.on_vsync(baton).unwrap();
         }
 
         // if let Err(err) = data.state.backend_data.x11_surface.submit() {
@@ -221,6 +245,7 @@ pub fn run_x11_client() {
             state,
             tx_fbo,
             baton,
+            flutter_engine,
         };
 
         let result = event_loop.dispatch(None, &mut calloop_data);
@@ -229,6 +254,7 @@ pub fn run_x11_client() {
             state,
             tx_fbo,
             baton,
+            flutter_engine,
         } = calloop_data;
 
         if result.is_err() {

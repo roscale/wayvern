@@ -32,7 +32,7 @@ extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut :
 
 impl BinaryMessenger for BinaryMessengerImpl {
 
-    fn handle_message(&mut self, message: FlutterPlatformMessage) {
+    fn handle_message(&mut self, message: &FlutterPlatformMessage) {
         let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
         let channel = channel.to_str().unwrap();
         if let Some(handler) = self.handlers.get_mut(channel) {

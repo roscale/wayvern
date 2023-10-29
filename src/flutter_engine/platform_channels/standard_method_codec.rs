@@ -6,7 +6,7 @@ use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::platform_channels::standard_codec_serializer::StandardCodecSerializer;
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct StandardMethodCodec {
     serializer: StandardCodecSerializer,
 }
