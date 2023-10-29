@@ -1,3 +1,4 @@
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 
 type ResultHandlerSuccess<T> = Option<Box<dyn FnMut(Option<&T>)>>;
@@ -6,7 +7,7 @@ type ResultHandlerError<T> = Option<Box<dyn FnMut(&str, &str, Option<&T>)>>;
 
 type ResultHandlerNotImplemented = Option<Box<dyn FnMut()>>;
 
-pub struct MethodResultFunctions<T> {
+pub struct MethodResultFunctions<T = EncodableValue> {
     on_success: ResultHandlerSuccess<T>,
     on_error: ResultHandlerError<T>,
     on_not_implemented: ResultHandlerNotImplemented,

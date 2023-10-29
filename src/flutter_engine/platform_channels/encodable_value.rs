@@ -12,7 +12,7 @@ pub enum EncodableValue {
     Int64List(Vec<i64>),
     DoubleList(Vec<f64>),
     List(Vec<EncodableValue>),
-    Map(Box<Vec<(EncodableValue, EncodableValue)>>),
+    Map(Vec<(EncodableValue, EncodableValue)>),
     Custom(CustomEncodableValue),
     FloatList(Vec<f32>),
 }

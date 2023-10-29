@@ -175,7 +175,7 @@ impl StandardCodecSerializer {
                     let value = self.read_value(stream);
                     map_value.push((key, value));
                 }
-                EncodableValue::Map(Box::new(map_value))
+                EncodableValue::Map(map_value)
             }
             EncodedType::kFloat32List => self.read_vector::<f32>(stream),
         }

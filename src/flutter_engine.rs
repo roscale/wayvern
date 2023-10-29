@@ -217,7 +217,7 @@ impl FlutterEngine {
         this.handle = flutter_engine;
 
         let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |deadline, _, data: &mut CalloopData<BackendData>| {
-            let duration = data.flutter_engine.task_runner.execute_expired_tasks(&move |task| {
+            let duration = data.flutter_engine.task_runner.execute_expired_tasks(move |task| {
                 unsafe { FlutterEngineRunTask(flutter_engine, task as *const _) };
             });
             TimeoutAction::ToDuration(duration)
@@ -283,10 +283,6 @@ impl FlutterEngine {
             return Err(format!("Could not send pointer event, error {result}").into());
         }
         Ok(())
-    }
-
-    pub fn run_task(&self, task: &FlutterTask) {
-        unsafe { FlutterEngineRunTask(self.handle, task as *const _) };
     }
 }
 

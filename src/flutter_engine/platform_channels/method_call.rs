@@ -1,4 +1,7 @@
-pub struct MethodCall<T> {
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+
+#[derive(Debug)]
+pub struct MethodCall<T = EncodableValue> {
     method: String,
     arguments: Option<Box<T>>,
 }

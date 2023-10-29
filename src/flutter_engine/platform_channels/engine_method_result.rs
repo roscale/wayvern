@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryReply;
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 
@@ -16,7 +17,7 @@ impl ReplyManager {
     }
 
     pub fn send_response_data(&mut self, data: Option<&Vec<u8>>) {
-        let reply_handler = if let Some(reply_handler) = self.reply_handler.take() {
+        let mut reply_handler = if let Some(reply_handler) = self.reply_handler.take() {
             reply_handler
         } else {
             eprintln!("Error: Only one of Success, Error, or NotImplemented can be called, \
@@ -40,7 +41,7 @@ impl Drop for ReplyManager {
     }
 }
 
-pub struct EngineMethodResult<T> {
+pub struct EngineMethodResult<T = EncodableValue> {
     reply_manager: ReplyManager,
     codec: Rc<dyn MethodCodec<T>>,
 }

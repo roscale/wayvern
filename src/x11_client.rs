@@ -146,13 +146,18 @@ pub fn run_x11_client() {
         },
     ) = FlutterEngine::new(&egl_context, &state).unwrap();
 
-    let mut method_channel: MethodChannel<EncodableValue> = MethodChannel::new(
+    let mut method_channel: MethodChannel = MethodChannel::new(
         flutter_engine.binary_messenger.as_mut().unwrap(),
         "test_channel".to_string(),
         Rc::new(StandardMethodCodec::new()),
     );
 
-    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultFunctions::<EncodableValue>::new(
+    method_channel.set_method_call_handler(Some(Box::new(|call, mut result| {
+        println!("Received method call: {:?}", call);
+        result.success(Some(&EncodableValue::String("Hello from Rust!".to_string())));
+    })));
+
+    method_channel.invoke_method("test", Some(Box::new(EncodableValue::Double(1.23))), Some(Box::new(MethodResultFunctions::new(
         Some(Box::new(|result| {
             println!("Success: {:?}", result);
         })),

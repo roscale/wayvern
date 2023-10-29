@@ -101,14 +101,14 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
             let mut messenger = BinaryMessengerImpl::new(data.flutter_engine.handle);
             let codec = Rc::new(StandardMethodCodec::new());
             let mut method_channel = MethodChannel::new(&mut messenger, "test_channel".to_string(), codec);
-            method_channel.invoke_method("test", Some(Box::new(EncodableValue::Map(Box::new(vec![
+            method_channel.invoke_method("test", Some(Box::new(EncodableValue::Map(vec![
                 (EncodableValue::Int32(3), EncodableValue::String("three".to_string())),
                 (EncodableValue::Bool(false), EncodableValue::List(vec![
                     EncodableValue::Int32(1),
                     EncodableValue::Int32(2),
                     EncodableValue::Int32(3),
                 ])),
-            ])))), None);
+            ]))), None);
         }
         InputEvent::GestureSwipeBegin { .. } => {}
         InputEvent::GestureSwipeUpdate { .. } => {}

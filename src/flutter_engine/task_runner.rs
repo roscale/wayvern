@@ -59,7 +59,7 @@ impl TaskRunner {
         self.reschedule_timer()
     }
 
-    pub fn execute_expired_tasks(&mut self, execute_task: &dyn Fn(&FlutterTask)) -> Duration {
+    pub fn execute_expired_tasks(&mut self, execute_task: impl Fn(&FlutterTask)) -> Duration {
         assert!(self.expired_tasks.is_empty());
 
         {

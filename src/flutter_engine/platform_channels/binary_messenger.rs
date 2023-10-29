@@ -1,6 +1,6 @@
 use crate::flutter_engine::embedder::FlutterPlatformMessage;
 
-pub type BinaryReply = Option<Box<dyn FnOnce(Option<&[u8]>)>>;
+pub type BinaryReply = Option<Box<dyn FnMut(Option<&[u8]>)>>;
 
 pub type BinaryMessageHandler = Option<Box<dyn FnMut(&[u8], BinaryReply)>>;
 
