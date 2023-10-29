@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_shm, delegate_xdg_shell};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle};
@@ -32,6 +33,15 @@ pub struct ServerState<BackendData: Backend + 'static + ?Sized> {
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
 }
+
+// Macros used to delegate protocol handling to types in the app state.
+delegate_compositor!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_xdg_shell!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_shm!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_dmabuf!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_output!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+// delegate_seat!(App);
+// delegate_data_device!(App);
 
 impl<BackendData: Backend + 'static> ServerState<BackendData> {
     pub fn new(

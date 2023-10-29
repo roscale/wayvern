@@ -107,13 +107,3 @@ impl ClientData for ClientState {
         println!("disconnected");
     }
 }
-
-// Macros used to delegate protocol handling to types in the app state.
-delegate_xdg_shell!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-delegate_compositor!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-delegate_shm!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-delegate_dmabuf!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-delegate_output!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-
-// delegate_seat!(App);
-// delegate_data_device!(App);

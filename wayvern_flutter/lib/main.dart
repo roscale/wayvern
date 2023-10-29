@@ -1,158 +1,190 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'dart:ui';
 
-const platform = MethodChannel('test_channel');
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import 'package:zenith/platform_api.dart';
+import 'package:zenith/ui/desktop/desktop_ui.dart';
+import 'package:zenith/ui/mobile/mobile_ui.dart';
+import 'package:zenith/ui/mobile/state/power_menu_state.dart';
+import 'package:zenith/util/state/key_tracker.dart';
+import 'package:zenith/util/state/lock_screen_state.dart';
+import 'package:zenith/util/state/root_overlay.dart';
+import 'package:zenith/util/state/screen_state.dart';
+import 'package:zenith/util/state/ui_mode_state.dart';
 
 void main() {
+  // debugRepaintRainbowEnabled = true;
+  // debugPrintGestureArenaDiagnostics = true;
   WidgetsFlutterBinding.ensureInitialized();
+  final container = ProviderContainer();
 
-  platform.setMethodCallHandler((call) async {
-    if (call.method == 'test') {
-      print(call.arguments);
-      return [1, 2, "maybe"];
+  final platformApi = container.read(platformApiProvider.notifier);
+
+  SchedulerBinding.instance.addPostFrameCallback((_) {
+    platformApi.startupComplete();
+  });
+
+  container.read(platformApiProvider.notifier).init();
+
+  _registerLockScreenKeyboardHandler(container);
+  _registerPowerButtonHandler(container);
+
+  VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
+  runApp(
+    UncontrolledProviderScope(
+      container: container,
+      child: Builder(
+        builder: (context) {
+          return Consumer(
+            builder: (BuildContext context, WidgetRef ref, Widget? child) {
+              bool screenOn = ref.watch(screenStateNotifierProvider.select((v) => v.on));
+              final screenStateNotifier = ref.read(screenStateNotifierProvider.notifier);
+
+              return GestureDetector(
+                onDoubleTap: !screenOn ? () => screenStateNotifier.turnOn() : null,
+                child: AbsorbPointer(
+                  absorbing: !screenOn,
+                  child: child,
+                ),
+              );
+            },
+            child: Zenith(),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+const _notchHeight = 80.0; // physical pixels
+
+class Zenith extends ConsumerWidget {
+  final GlobalKey<OverlayState> overlayKey = GlobalKey();
+
+  Zenith({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MaterialApp(
+      home: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          Future.microtask(() => ref.read(screenStateNotifierProvider.notifier).setSize(constraints.biggest));
+
+          return RotatedBox(
+            quarterTurns: ref.watch(screenStateNotifierProvider.select((v) => v.rotation)),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                Future.microtask(() => ref.read(screenStateNotifierProvider.notifier).setRotatedSize(constraints.biggest));
+
+                return ScrollConfiguration(
+                  behavior: const MaterialScrollBehavior().copyWith(
+                    // Enable scrolling by dragging the mouse cursor.
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.stylus,
+                      PointerDeviceKind.invertedStylus,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.unknown,
+                    },
+                  ),
+                  child: MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      padding: EdgeInsets.only(
+                        top: _notchHeight / MediaQuery.of(context).devicePixelRatio,
+                      ),
+                    ),
+                    child: Scaffold(
+                      body: Consumer(
+                        builder: (BuildContext context, WidgetRef ref, Widget? child) {
+                          UiMode uiMode = ref.watch(uiModeStateProvider);
+                          return Stack(
+                            children: [
+                              if (uiMode == UiMode.desktop) const DesktopUi(),
+                              if (uiMode == UiMode.mobile) const MobileUi(),
+                              Overlay(
+                                key: ref.watch(rootOverlayKeyProvider),
+                                initialEntries: const [
+                                  // ref.read(lockScreenStateProvider).overlayEntry, // Start with the session locked.
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+void _registerLockScreenKeyboardHandler(ProviderContainer container) {
+  HardwareKeyboard.instance.addHandler((KeyEvent keyEvent) {
+    if (container.read(lockScreenStateProvider).locked) {
+      // We don't want to send keyboard events to Wayland clients when the screen
+      // is locked. Capture all keyboard events.
+      return true;
+    }
+    return false;
+  });
+}
+
+void _registerPowerButtonHandler(ProviderContainer container) {
+  const KeyboardKey powerKey = LogicalKeyboardKey.powerOff;
+
+  HardwareKeyboard.instance.addHandler((KeyEvent keyEvent) {
+    if (keyEvent.logicalKey == powerKey) {
+      if (keyEvent is KeyDownEvent) {
+        container.read(keyTrackerProvider(keyEvent.logicalKey).notifier).down();
+      } else if (keyEvent is KeyUpEvent) {
+        container.read(keyTrackerProvider(keyEvent.logicalKey).notifier).up();
+      }
+      return true;
+    }
+    return false;
+  });
+
+  bool turnedOn = false;
+
+  container.listen(keyTrackerProvider(powerKey).select((v) => v.down), (_, __) {
+    final screenState = container.read(screenStateNotifierProvider);
+    final screenStateNotifier = container.read(screenStateNotifierProvider.notifier);
+    if (!screenState.on) {
+      turnedOn = true;
+      screenStateNotifier.turnOn();
+      container.read(powerMenuStateNotifierProvider.notifier).removeOverlay();
     } else {
-      return "Huh?";
+      turnedOn = false;
     }
   });
 
-  runApp(const MyApp());
-}
+  container.listen(keyTrackerProvider(powerKey).select((v) => v.shortPress), (_, __) {
+    final screenState = container.read(screenStateNotifierProvider);
+    final screenStateNotifier = container.read(screenStateNotifierProvider.notifier);
+    if (screenState.on && !turnedOn) {
+      screenStateNotifier.lockAndTurnOff();
+      container.read(powerMenuStateNotifierProvider.notifier).removeOverlay();
+    }
+  });
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  container.listen(keyTrackerProvider(powerKey).select((v) => v.longPress), (_, __) {
+    final state = container.read(powerMenuStateNotifierProvider);
+    final notifier = container.read(powerMenuStateNotifierProvider.notifier);
 
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a blue toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() async {
-    final a = await platform.invokeMethod("test");
-    print("received : $a");
-
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const CircularProgressIndicator(),
-            Expanded(child: ListView(
-              children: [
-                for (var i = 0; i < 100; i++)
-                  ListTile(
-                    title: Text('Item $i'),
-                    subtitle: Text('Subtitle $i'),
-                    leading: const Icon(Icons.favorite),
-                    trailing: const Icon(Icons.more_vert),
-                    onTap: () async {
-                      final a = await platform.invokeMethod("test", {"asta": 32});
-                      print("received : $a");
-                    },
-                  ),
-              ],
-            ))
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
-  }
+    if (!state.shown) {
+      notifier.show();
+    } else {
+      notifier.hide();
+    }
+  });
 }
