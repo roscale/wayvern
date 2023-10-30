@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use log::{error, warn};
 use smithay::{
@@ -38,14 +39,13 @@ use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::wayland_server::protocol::wl_shm;
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 
-use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
+use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, send_frames_surface_tree, ServerState};
 use crate::flutter_engine::FlutterEngine;
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::method_result_functions::MethodResultFunctions;
-use crate::flutter_engine::platform_channels::method_result_mpsc_channel::{MethodResultEnum, MethodResultMpscChannel};
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
 
@@ -123,6 +123,19 @@ pub fn run_x11_client() {
         },
     };
 
+    let dmabuf_formats = egl_context.dmabuf_texture_formats()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+        .build()
+        .unwrap();
+    let mut dmabuf_state = DmabufState::new();
+    let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
+        &display.handle(),
+        &dmabuf_default_feedback,
+    );
+
     let mut state = ServerState::new(
         display,
         event_loop.handle(),
@@ -136,6 +149,7 @@ pub fn run_x11_client() {
                 refresh: 144_000,
             },
         },
+        Some(dmabuf_state),
     );
 
     let (
@@ -246,6 +260,10 @@ pub fn run_x11_client() {
             data.state.backend_data.x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);
         };
+        let start_time = std::time::Instant::now();
+        for surface in data.state.xdg_shell_state.toplevel_surfaces() {
+            send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+        }
     }).unwrap();
 
     while state.running.load(Ordering::SeqCst) {
@@ -255,7 +273,7 @@ pub fn run_x11_client() {
             baton,
         };
 
-        let result = event_loop.dispatch(None, &mut calloop_data);
+        let result = event_loop.dispatch(Duration::from_secs(1), &mut calloop_data);
 
         CalloopData {
             state,
@@ -279,4 +297,8 @@ pub struct X11Data {
     pub mode: Mode,
 }
 
-impl Backend for X11Data {}
+impl Backend for X11Data {
+    fn seat_name(&self) -> String {
+        "x11".to_string()
+    }
+}

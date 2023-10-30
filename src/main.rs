@@ -58,14 +58,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub trait Backend {}
+pub trait Backend {
+    fn seat_name(&self) -> String;
+}
 
 pub struct FlutterState {
     pub flutter_engine: FlutterEngine,
     pub mouse_button_tracker: MouseButtonTracker,
 }
 
-pub struct CalloopData<BackendData: Backend + 'static + ?Sized> {
+pub struct CalloopData<BackendData: Backend + 'static> {
     pub state: ServerState<BackendData>,
     pub tx_fbo: channel::Sender<Option<Dmabuf>>,
     pub baton: Option<flutter_engine::Baton>,

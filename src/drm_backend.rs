@@ -33,6 +33,7 @@ use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{DeviceFd, Point, Transform};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use smithay::wayland::drm_lease::DrmLease;
 use tracing::{error, info, warn};
 
@@ -52,7 +53,11 @@ pub struct DrmBackend {
     pointer_image: crate::cursor::Cursor,
 }
 
-impl Backend for DrmBackend {}
+impl Backend for DrmBackend {
+    fn seat_name(&self) -> String {
+        self.session.seat()
+    }
+}
 
 impl DrmBackend {
     fn get_gpu_data(&self) -> &GpuData {
@@ -131,12 +136,28 @@ pub fn run_drm_backend() {
             pointer_images: vec![],
             pointer_image: crate::cursor::Cursor::load(),
         },
+        None,
     );
 
     // Initialize GPU state.
     state.gpu_added(primary_gpu, &primary_gpu.dev_path().unwrap()).unwrap();
 
     let egl_context = state.backend_data.get_gpu_data().gles_renderer.egl_context();
+
+    let dmabuf_formats = egl_context.dmabuf_texture_formats()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    let dmabuf_default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
+        .build()
+        .unwrap();
+    let mut dmabuf_state = DmabufState::new();
+    let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<DrmBackend>>(
+        &display_handle,
+        &dmabuf_default_feedback,
+    );
+
+    state.dmabuf_state = Some(dmabuf_state);
 
     // Start the Flutter engine.
     let (
