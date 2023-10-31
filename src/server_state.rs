@@ -1,24 +1,25 @@
+use std::collections::HashMap;
 use std::env::{remove_var, set_var};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell};
-use smithay::backend::allocator::Buffer;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::input::pointer::CursorImageStatus;
-use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Clock, Monotonic, Rectangle, Serial};
+use smithay::utils::{Clock, Monotonic, Rectangle, Serial, Size};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, get_dmabuf, ImportError};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgShellHandler, XdgShellState};
 use smithay::wayland::shm::{ShmHandler, ShmState};
@@ -41,6 +42,7 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub backend_data: Box<BackendData>,
     pub flutter_engine: Option<Box<FlutterEngine>>,
     pub next_view_id: u64,
+    pub next_texture_id: u64,
     // space: Space<WindowElement>,
 
     pub mouse_position: (f64, f64),
@@ -50,6 +52,10 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
     pub dmabuf_state: Option<DmabufState>,
+
+    pub gles_texture_per_texture_id: HashMap<i64, GlesTexture>,
+    pub imported_dmabufs: Vec<Dmabuf>,
+    pub gles_renderer: Option<GlesRenderer>,
 }
 
 impl<BackendData: Backend + 'static> ServerState<BackendData> {
@@ -86,7 +92,8 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         // init input
         let mut seat_state = SeatState::new();
         let seat_name = backend_data.seat_name();
-        let seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
+        let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
+        seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
         // init wayland clients
         let source = ListeningSocketSource::new_auto().unwrap();
@@ -137,6 +144,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             seat,
             seat_state,
             next_view_id: 1,
+            next_texture_id: 1,
+            gles_texture_per_texture_id: HashMap::new(),
+            imported_dmabufs: Vec::new(),
+            gles_renderer: None,
         }
     }
 }
@@ -179,6 +190,25 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
+    fn new_surface(&mut self, surface: &WlSurface) {
+        // add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+        //     let maybe_dmabuf = with_states(surface, |surface_data| {
+        //         surface_data
+        //             .cached_state
+        //             .pending::<SurfaceAttributes>()
+        //             .buffer
+        //             .as_ref()
+        //             .and_then(|assignment| match assignment {
+        //                 BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+        //                 _ => None,
+        //             })
+        //     });
+        //     if let Some(dmabuf) = maybe_dmabuf {
+        //         dbg!("da");
+        //     }
+        // })
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         // on_commit_buffer_handler::<Self>(surface);
 
@@ -194,37 +224,52 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 }
             });
 
-            let dmabuf = state.buffer
+
+            let texture = state.buffer
                 .as_ref()
                 .and_then(|assignment| match assignment {
-                    BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                    BufferAssignment::NewBuffer(buffer) => {
+                        self.gles_renderer.as_mut().unwrap().import_buffer(buffer, None, &[]).map(|t| t.ok()).flatten()
+                    },
                     _ => None,
                 });
+
+            let (texture_id, size) = if let Some(texture) = texture {
+                let size = texture.size();
+                let texture_id = self.next_view_id;
+                self.next_texture_id += 1;
+                self.gles_texture_per_texture_id.insert(texture_id as i64, texture);
+                let _ = self.flutter_engine_mut().register_external_texture(texture_id);
+                let _ = self.flutter_engine_mut().mark_external_texture_frame_available(texture_id);
+                (texture_id, Some(size))
+            } else {
+                (0, None)
+            };
 
             SurfaceCommitMessage {
                 view_id: my_state.view_id,
                 role,
-                texture_id: 0, // TODO
+                texture_id,
                 buffer_delta: state.buffer_delta,
-                buffer_size: dmabuf.as_ref().map(|dmabuf| dmabuf.size()),
+                buffer_size: size,
                 scale: state.buffer_scale,
                 input_region: state.input_region.clone(),
                 xdg_surface: match role {
                     Some(xdg::XDG_TOPLEVEL_ROLE | xdg::XDG_POPUP_ROLE) => {
                         let geometry = surface_data
                             .cached_state
-                            .current::<SurfaceCachedState>()
+                            .pending::<SurfaceCachedState>()
                             .geometry;
 
                         Some(XdgSurfaceCommitMessage {
-                            mapped: false,
+                            mapped: texture_id != 0,
                             role,
                             geometry: match geometry {
                                 Some(geometry) => Some(geometry),
                                 None => Some(Rectangle {
                                     loc: (0, 0).into(),
-                                    size: match dmabuf {
-                                        Some(dmabuf) => (dmabuf.size().w, dmabuf.size().h).into(),
+                                    size: match size {
+                                        Some(size) => (size.w, size.h).into(),
                                         None => (0, 0).into(),
                                     },
                                 }),
@@ -261,10 +306,24 @@ impl<BackendData: Backend> DmabufHandler for ServerState<BackendData> {
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf) -> Result<(), ImportError> {
-        // TODO
+        self.imported_dmabufs.push(_dmabuf);
         Ok(())
     }
 }
+
+// impl DmabufHandler for ServerState<X11Data> {
+//     fn dmabuf_state(&mut self) -> &mut DmabufState {
+//         &mut self.dmabuf_state.as_mut().unwrap()
+//     }
+//
+//     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+//         self.backend_data
+//             .gles_renderer
+//             .import_dmabuf(&dmabuf, None)
+//             .map(|_| ())
+//             .map_err(|_| ImportError::Failed)
+//     }
+// }
 
 impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
     type KeyboardFocus = WlSurface;

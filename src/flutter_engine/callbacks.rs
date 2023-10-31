@@ -1,9 +1,11 @@
 use std::ffi::c_void;
+use std::ptr::null_mut;
 
+use smithay::backend::renderer::gles::ffi;
 use tracing::error;
 
 use crate::flutter_engine::{Baton, FlutterEngine};
-use crate::flutter_engine::embedder::{FlutterDamage, FlutterPlatformMessage, FlutterPresentInfo, FlutterRect, FlutterTask, FlutterTransformation};
+use crate::flutter_engine::embedder::{FlutterDamage, FlutterOpenGLTexture, FlutterPlatformMessage, FlutterPresentInfo, FlutterRect, FlutterTask, FlutterTransformation};
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 
 pub unsafe extern "C" fn make_current(user_data: *mut c_void) -> bool {
@@ -130,6 +132,32 @@ pub unsafe extern "C" fn platform_message_callback(message: *const FlutterPlatfo
     let flutter_engine = &mut *(user_data as *mut FlutterEngine);
     let message = &*message;
     flutter_engine.binary_messenger.as_mut().unwrap().handle_message(message);
+}
+
+pub unsafe extern "C" fn gl_external_texture_frame_callback(
+    user_data: *mut c_void,
+    texture_id: i64,
+    width: usize,
+    height: usize,
+    texture_out: *mut FlutterOpenGLTexture,
+) -> bool {
+    let flutter_engine = &mut *(user_data as *mut FlutterEngine);
+    let channels = &mut flutter_engine.data.channels;
+
+    let (texture_name, format) = channels.tx_request_external_texture_name.send(texture_id).ok().and_then(|()| {
+        channels.rx_external_texture_name.recv().ok()
+    }).unwrap_or((0, ffi::RGBA8));
+
+    let texture_out = &mut *texture_out;
+    texture_out.target = ffi::TEXTURE_2D;
+    texture_out.name = texture_name;
+    texture_out.format = ffi::RGBA8;
+    texture_out.user_data = null_mut();
+    texture_out.destruction_callback = None;
+    texture_out.width = 0;
+    texture_out.height = 0;
+
+    return texture_name != 0;
 }
 
 pub enum FlutterEngineIntent {

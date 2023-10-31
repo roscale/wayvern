@@ -8,7 +8,7 @@ use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 pub struct SurfaceCommitMessage {
     pub view_id: u64,
     pub role: Option<&'static str>,
-    pub texture_id: i32,
+    pub texture_id: u64,
     pub buffer_delta: Option<Point<i32, Logical>>,
     pub buffer_size: Option<Size<i32, BufferCoords>>,
     pub scale: i32,
@@ -34,7 +34,7 @@ impl SurfaceCommitMessage {
                         _ => 0,
                     }
                 }).unwrap_or(0))),
-                (EncodableValue::String("texture_id".to_string()), EncodableValue::Int32(self.texture_id)),
+                (EncodableValue::String("textureId".to_string()), EncodableValue::Int64(self.texture_id as i64)),
                 (EncodableValue::String("x".to_string()), EncodableValue::Int32(self.buffer_delta.map(|delta| delta.x).unwrap_or(0))),
                 (EncodableValue::String("y".to_string()), EncodableValue::Int32(self.buffer_delta.map(|delta| delta.y).unwrap_or(0))),
                 (EncodableValue::String("width".to_string()), EncodableValue::Int32(self.buffer_size.map(|size| size.w).unwrap_or(0))),
@@ -56,6 +56,10 @@ impl SurfaceCommitMessage {
             vec.extend([
                 (EncodableValue::String("has_xdg_surface".to_string()), EncodableValue::Bool(true)),
                 (EncodableValue::String("xdg_surface".to_string()), xdg_surface.serialize()),
+                (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(false)),
+                (EncodableValue::String("has_toplevel_decoration".to_string()), EncodableValue::Bool(false)),
+                (EncodableValue::String("has_toplevel_title".to_string()), EncodableValue::Bool(false)),
+                (EncodableValue::String("has_toplevel_app_id".to_string()), EncodableValue::Bool(false)),
             ]);
         } else {
             vec.push(

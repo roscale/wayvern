@@ -35,6 +35,10 @@ use smithay::{
     },
     utils::DeviceFd,
 };
+use smithay::backend::renderer::gles::ffi::RGBA8;
+use smithay::backend::renderer::gles::format::fourcc_to_gl_formats;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::Texture;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
@@ -160,6 +164,8 @@ pub fn run_x11_client() {
             mut tx_fbo,
             tx_output_height,
             rx_baton,
+            rx_request_external_texture_name,
+            tx_external_texture_name,
         },
     ) = FlutterEngine::new(&egl_context, &state).unwrap();
 
@@ -197,6 +203,10 @@ pub fn run_x11_client() {
     ]);
 
     let mut baton = None;
+
+    let gles_renderer = unsafe { GlesRenderer::new(egl_context) }.expect("Failed to initialize GLES");
+
+    state.gles_renderer = Some(gles_renderer);
 
     event_loop
         .handle()
@@ -263,6 +273,19 @@ pub fn run_x11_client() {
         let start_time = std::time::Instant::now();
         for surface in data.state.xdg_shell_state.toplevel_surfaces() {
             send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+        }
+    }).unwrap();
+
+    event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
+        if let Msg(texture_id) = event {
+            let texture = data.state.gles_texture_per_texture_id.get(&texture_id);
+            let _ = tx_external_texture_name.send(texture.map(|texture|
+                {
+                    let gl_format = fourcc_to_gl_formats(texture.format().unwrap()).map(|f| f.0);
+
+                    (texture.tex_id(), gl_format.unwrap_or(RGBA8))
+                })
+                .unwrap_or((0, RGBA8)));
         }
     }).unwrap();
 

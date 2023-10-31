@@ -142,7 +142,8 @@ pub fn run_drm_backend() {
     // Initialize GPU state.
     state.gpu_added(primary_gpu, &primary_gpu.dev_path().unwrap()).unwrap();
 
-    let egl_context = state.backend_data.get_gpu_data().gles_renderer.egl_context();
+    let gles_renderer = state.gles_renderer.as_ref().unwrap();
+    let egl_context = gles_renderer.egl_context();
 
     let dmabuf_formats = egl_context.dmabuf_texture_formats()
         .iter()
@@ -168,6 +169,8 @@ pub fn run_drm_backend() {
             mut tx_fbo,
             tx_output_height: _,
             rx_baton,
+            rx_request_external_texture_name,
+            tx_external_texture_name,
         },
     ) = FlutterEngine::new(egl_context, &state).unwrap();
 
@@ -278,7 +281,7 @@ impl ServerState<DrmBackend> {
         };
 
         let (gles_renderer, surface, last_rendered_slot, swapchain) = (
-            &mut gpu_data.gles_renderer,
+            self.gles_renderer.as_mut().unwrap(),
             if let Some(surface) = gpu_data.surfaces.values_mut().next() {
                 surface
             } else {
@@ -369,7 +372,6 @@ struct GpuData {
     drm_scanner: DrmScanner,
     render_node: DrmNode,
     registration_token: RegistrationToken,
-    gles_renderer: GlesRenderer,
     swapchain: Swapchain<Box<dyn Allocator<Buffer=Dmabuf, Error=AnyError> + 'static>>,
     current_slot: Option<Slot<Dmabuf>>,
     last_rendered_slot: Option<Slot<Dmabuf>>,
@@ -449,6 +451,8 @@ impl ServerState<DrmBackend> {
             Swapchain::new(dmabuf_allocator, 0, 0, Fourcc::Argb8888, modifiers)
         };
 
+        self.gles_renderer = Some(gles_renderer);
+
         self.backend_data.gpus.insert(
             node,
             GpuData {
@@ -461,7 +465,6 @@ impl ServerState<DrmBackend> {
                 render_node,
                 surfaces: HashMap::new(),
                 active_leases: Vec::new(),
-                gles_renderer,
                 swapchain,
                 current_slot: None,
                 last_rendered_slot: None,
@@ -546,7 +549,7 @@ impl ServerState<DrmBackend> {
             SUPPORTED_FORMATS
         };
 
-        let render_formats = device.gles_renderer.egl_context().dmabuf_render_formats().clone();
+        let render_formats = self.gles_renderer.as_ref().unwrap().egl_context().dmabuf_render_formats().clone();
 
         let driver = match device.drm_device.get_driver() {
             Ok(driver) => driver,
@@ -599,7 +602,7 @@ impl ServerState<DrmBackend> {
         surface
             .compositor
             .render_frame::<_, TextureRenderElement<_>, GlesTexture>(
-                &mut device.gles_renderer,
+                self.gles_renderer.as_mut().unwrap(),
                 &[],
                 [0.0, 0.0, 0.0, 0.0])
             .unwrap();

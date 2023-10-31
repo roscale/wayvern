@@ -46,8 +46,8 @@ use crate::{Backend, CalloopData, flutter_engine::{
         FlutterWindowMetricsEvent,
     },
 }, ServerState};
-use crate::flutter_engine::callbacks::{platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
-use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTask, FlutterTaskRunnerDescription};
+use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
+use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
 use crate::flutter_engine::task_runner::TaskRunner;
@@ -83,7 +83,9 @@ impl FlutterEngine {
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
         let (tx_output_height, rx_output_height) = channel::channel::<u16>();
         let (tx_baton, rx_baton) = channel::channel::<Baton>();
-        let (reschedule_task_runner_timer_tx, reschedule_task_runner_timer_rx) = channel::channel::<Duration>();
+        let (tx_reschedule_task_runner_timer, rx_reschedule_task_runner_timer) = channel::channel::<Duration>();
+        let (tx_request_external_texture_name, rx_request_external_texture_name) = channel::channel::<i64>();
+        let (tx_external_texture_name, rx_external_texture_name) = channel::channel::<(u32, u32)>();
 
         let flutter_engine_channels = FlutterEngineChannels {
             tx_present,
@@ -91,6 +93,8 @@ impl FlutterEngine {
             rx_fbo,
             rx_output_height,
             tx_baton,
+            tx_request_external_texture_name,
+            rx_external_texture_name,
         };
 
         let embedder_channels = EmbedderChannels {
@@ -99,6 +103,8 @@ impl FlutterEngine {
             tx_fbo,
             tx_output_height,
             rx_baton,
+            rx_request_external_texture_name,
+            tx_external_texture_name,
         };
 
         let assets_path = CString::new(if option_env!("BUNDLE").is_some() { "data/flutter_assets" } else { "wayvern_flutter/build/linux/x64/debug/bundle/data/flutter_assets" })?;
@@ -116,7 +122,7 @@ impl FlutterEngine {
         let mut this = Box::new(Self {
             handle: null_mut(),
             data: FlutterEngineData::new(root_egl_context, flutter_engine_channels)?,
-            task_runner: TaskRunner::new(reschedule_task_runner_timer_tx),
+            task_runner: TaskRunner::new(tx_reschedule_task_runner_timer),
             current_thread_id: std::thread::current().id(),
             mouse_button_tracker: MouseButtonTracker::new(),
             binary_messenger: None,
@@ -192,7 +198,7 @@ impl FlutterEngine {
                     fbo_reset_after_present: true,
                     surface_transformation: Some(surface_transformation),
                     gl_proc_resolver: None,
-                    gl_external_texture_frame_callback: None,
+                    gl_external_texture_frame_callback: Some(gl_external_texture_frame_callback),
                     fbo_with_frame_info_callback: None,
                     present_with_info: Some(present_with_info),
                     populate_existing_damage: Some(populate_existing_damage),
@@ -226,7 +232,7 @@ impl FlutterEngine {
 
         let task_runner_timer_registration_token = server_state.loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
 
-        server_state.loop_handle.insert_source(reschedule_task_runner_timer_rx, move |event, _, data: &mut CalloopData<BackendData>| {
+        server_state.loop_handle.insert_source(rx_reschedule_task_runner_timer, move |event, _, data: &mut CalloopData<BackendData>| {
             if let Msg(duration) = event {
                 task_runner_timer_dispatcher.as_source_mut().set_duration(duration);
                 data.state.loop_handle.update(&task_runner_timer_registration_token).unwrap();
@@ -285,6 +291,22 @@ impl FlutterEngine {
         }
         Ok(())
     }
+
+    pub fn register_external_texture(&self, texture_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineRegisterExternalTexture(self.handle, texture_id as i64) };
+        if result != 0 {
+            return Err(format!("Could not register external texture, error {result}").into());
+        }
+        Ok(())
+    }
+
+    pub fn mark_external_texture_frame_available(&self, texture_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineMarkExternalTextureFrameAvailable(self.handle, texture_id as i64) };
+        if result != 0 {
+            return Err(format!("Could not mark external texture frame available, error {result}").into());
+        }
+        Ok(())
+    }
 }
 
 impl Drop for FlutterEngine {
@@ -339,6 +361,8 @@ pub struct FlutterEngineChannels {
     rx_fbo: channel::Channel<Option<Dmabuf>>,
     rx_output_height: channel::Channel<u16>,
     tx_baton: channel::Sender<Baton>,
+    tx_request_external_texture_name: channel::Sender<i64>,
+    rx_external_texture_name: channel::Channel<(u32, u32)>,
 }
 
 pub struct EmbedderChannels {
@@ -347,4 +371,6 @@ pub struct EmbedderChannels {
     pub tx_fbo: channel::Sender<Option<Dmabuf>>,
     pub tx_output_height: channel::Sender<u16>,
     pub rx_baton: channel::Channel<Baton>,
+    pub rx_request_external_texture_name: channel::Channel<i64>,
+    pub tx_external_texture_name: channel::Sender<(u32, u32)>,
 }
