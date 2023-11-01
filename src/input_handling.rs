@@ -28,8 +28,6 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
             send_motion_event(data);
         }
         InputEvent::PointerButton { event } => {
-            event.state();
-
             let phase = if event.state() == ButtonState::Pressed {
                 let are_any_buttons_pressed = data.state.flutter_engine().mouse_button_tracker.are_any_buttons_pressed();
                 let _ = data.state.flutter_engine_mut().mouse_button_tracker.press(event.button_code() as u16);
@@ -95,20 +93,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
 
             if event.key_code() == KEY_ESC as u32 {
                 data.state.running.store(false, Ordering::SeqCst);
-                return;
             }
-
-            let mut messenger = BinaryMessengerImpl::new(data.state.flutter_engine().handle);
-            let codec = Rc::new(StandardMethodCodec::new());
-            let mut method_channel = MethodChannel::new(&mut messenger, "test_channel".to_string(), codec);
-            method_channel.invoke_method("test", Some(Box::new(EncodableValue::Map(vec![
-                (EncodableValue::Int32(3), EncodableValue::String("three".to_string())),
-                (EncodableValue::Bool(false), EncodableValue::List(vec![
-                    EncodableValue::Int32(1),
-                    EncodableValue::Int32(2),
-                    EncodableValue::Int32(3),
-                ])),
-            ]))), None);
         }
         InputEvent::GestureSwipeBegin { .. } => {}
         InputEvent::GestureSwipeUpdate { .. } => {}

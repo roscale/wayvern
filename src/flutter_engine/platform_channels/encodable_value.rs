@@ -18,11 +18,11 @@ pub enum EncodableValue {
 }
 
 impl EncodableValue {
-    fn is_null(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         matches!(self, EncodableValue::Null)
     }
 
-    fn long_value(&self) -> Option<i64> {
+    pub fn long_value(&self) -> Option<i64> {
         match self {
             EncodableValue::Int32(v) => Some(*v as i64),
             EncodableValue::Int64(v) => Some(*v),

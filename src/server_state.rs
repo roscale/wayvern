@@ -1,27 +1,29 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::env::{remove_var, set_var};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::{Seat, SeatHandler, SeatState};
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent, PointerHandle};
 use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_server::{Client, Display, DisplayHandle};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
+use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, Size};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{add_post_commit_hook, add_pre_commit_hook, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
+use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgShellHandler, XdgShellState};
@@ -37,6 +39,7 @@ use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::flutter_engine::wayland_messages::{SurfaceCommitMessage, XdgSurfaceCommitMessage};
+use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;
 
 pub struct ServerState<BackendData: Backend + 'static> {
@@ -46,6 +49,7 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub clock: Clock<Monotonic>,
     pub seat: Seat<ServerState<BackendData>>,
     pub seat_state: SeatState<ServerState<BackendData>>,
+    pub pointer: PointerHandle<ServerState<BackendData>>,
     pub backend_data: Box<BackendData>,
     pub flutter_engine: Option<Box<FlutterEngine>>,
     pub next_view_id: u64,
@@ -62,6 +66,8 @@ pub struct ServerState<BackendData: Backend + 'static> {
 
     pub imported_dmabufs: Vec<Dmabuf>,
     pub gles_renderer: Option<GlesRenderer>,
+    pub surfaces: HashMap<u64, WlSurface>,
+    pub xdg_toplevels: HashMap<u64, XdgToplevel>,
     pub texture_ids_per_view_id: HashMap<u64, Vec<i64>>,
     pub view_id_per_texture_id: HashMap<i64, u64>,
     pub texture_swapchains: HashMap<i64, TextureSwapChain>,
@@ -119,6 +125,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
+        let pointer = seat.add_pointer();
 
         // init wayland clients
         let source = ListeningSocketSource::new_auto().unwrap();
@@ -161,10 +168,22 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         macro_rules! extract {
             ($e:expr, $p:path) => {
                 match $e {
-                    $p(value) => Some(value),
-                    _ => None,
+                    $p(value) => value,
+                    _ => panic!("Failed to extract value"),
                 }
             };
+        }
+
+        fn get_value<'a>(map: &'a EncodableValue, key: &str) -> &'a EncodableValue {
+            let map = extract!(map, EncodableValue::Map);
+            for (k, v) in map {
+                if let EncodableValue::String(k) = k {
+                    if k == key {
+                        return v;
+                    }
+                }
+            }
+            panic!("Key {} not found in map", key);
         }
 
         loop_handle
@@ -172,19 +191,94 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                 rx_platform_message,
                 |event, (), data| {
                     if let Msg((method_call, mut result)) = event {
-                        result.success(None);
-                        // if method_call.method() == "pointer_hover" {
-                        //     let arguments = method_call.arguments().unwrap();
-                        //     let args = extract!(arguments, EncodableValue::Map).unwrap();
-                        //     let mut aadsf = HashMap::new();
-                        //     for (key, value) in args {
-                        //         let key = extract!(key, EncodableValue::String).unwrap();
-                        //         aadsf.insert(key.as_str(), value);
-                        //     }
-                        //     aadsf.get("view_id").unwrap();
-                        //
-                        // }
-                        // result.success(None);
+                        let pointer = data.state.pointer.clone();
+                        let now = Duration::from(data.state.clock.now()).as_millis() as u32;
+
+                        match method_call.method() {
+                            "pointer_hover" => {
+                                let args = method_call.arguments().unwrap();
+                                let view_id = get_value(args, "view_id").long_value().unwrap();
+                                let x = *extract!(get_value(args, "x"), EncodableValue::Double);
+                                let y = *extract!(get_value(args, "y"), EncodableValue::Double);
+
+                                if let Some(surface) = data.state.surfaces.get(&(view_id as u64)).cloned() {
+                                    pointer.motion(
+                                        &mut data.state,
+                                        Some((surface.clone(), (0, 0).into())),
+                                        &MotionEvent {
+                                            location: (x, y).into(),
+                                            serial: Serial::from(0), // TODO
+                                            time: now,
+                                        },
+                                    );
+                                    pointer.frame(&mut data.state);
+                                    result.success(None);
+                                } else {
+                                    result.error(
+                                        "surface_doesnt_exist".to_string(),
+                                        format!("Surface {view_id} doesn't exist"),
+                                        None,
+                                    );
+                                }
+                            }
+                            "pointer_exit" => {
+                                pointer.motion(
+                                    &mut data.state,
+                                    None,
+                                    &MotionEvent {
+                                        location: (0.0, 0.0).into(),
+                                        serial: Serial::from(0), // TODO
+                                        time: now,
+                                    },
+                                );
+                                result.success(None);
+                            }
+                            "mouse_button_event" => {
+                                let args = method_call.arguments().unwrap();
+                                let button = get_value(args, "button").long_value().unwrap();
+                                let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
+
+                                pointer.button(
+                                    &mut data.state,
+                                    &ButtonEvent {
+                                        serial: Serial::from(0), // TODO
+                                        time: now,
+                                        button: *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button as u32)).unwrap() as u32,
+                                        state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
+                                    },
+                                );
+                                pointer.frame(&mut data.state);
+                                result.success(None);
+                            }
+                            "activate_window" => {
+                                let args = method_call.arguments().unwrap();
+                                let args = extract!(args, EncodableValue::List);
+                                let view_id = args[0].long_value().unwrap();
+                                let activate = extract!(args[1], EncodableValue::Bool);
+
+                                if let Some(toplevel) = data.state.xdg_toplevels.get(&(view_id as u64)) {
+                                    let toplevel = data.state.xdg_shell_state.get_toplevel(toplevel).unwrap();
+                                    toplevel.with_pending_state(|state| {
+                                        if activate {
+                                            state.states.set(xdg_toplevel::State::Activated);
+                                        } else {
+                                            state.states.unset(xdg_toplevel::State::Activated);
+                                        }
+                                    });
+                                    toplevel.send_configure();
+                                    result.success(None);
+                                } else {
+                                    result.error(
+                                        "surface_doesnt_exist".to_string(),
+                                        format!("Surface {view_id} doesn't exist"),
+                                        None,
+                                    );
+                                }
+                            }
+                            _ => {
+                                result.success(None);
+                            }
+                        }
                     }
                 },
             )
@@ -205,10 +299,13 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             dmabuf_state,
             seat,
             seat_state,
+            pointer,
             next_view_id: 1,
             next_texture_id: 1,
             imported_dmabufs: Vec::new(),
             gles_renderer: None,
+            surfaces: HashMap::new(),
+            xdg_toplevels: HashMap::new(),
             texture_ids_per_view_id: HashMap::new(),
             view_id_per_texture_id: HashMap::new(),
             texture_swapchains: HashMap::new(),
@@ -227,6 +324,11 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
+        let view_id = with_states(surface.wl_surface(), |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+        self.xdg_toplevels.insert(view_id, surface.xdg_toplevel().clone());
+
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Activated);
         });
@@ -239,6 +341,13 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
         // Handle popup grab here
+    }
+
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        let view_id = with_states(surface.wl_surface(), |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+        self.xdg_toplevels.remove(&view_id);
     }
 }
 
@@ -256,20 +365,24 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
+    fn new_surface(&mut self, surface: &WlSurface) {
+        let view_id = self.get_new_view_id();
+        with_states(surface, |surface_data| {
+            surface_data.data_map.insert_if_missing(|| RefCell::new(MySurfaceState {
+                view_id,
+                old_texture_size: None,
+            }));
+        });
+        self.surfaces.insert(view_id, surface.clone());
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         // on_commit_buffer_handler::<Self>(surface);
 
         let commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
-
             let state = surface_data.cached_state.current::<SurfaceAttributes>();
-
-            let my_state = surface_data.data_map.get_or_insert(|| {
-                RefCell::new(MySurfaceState {
-                    view_id: self.get_new_view_id(),
-                    old_texture_size: None,
-                })
-            });
+            let my_state = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap();
 
             let (view_id, old_texture_size) = {
                 let my_state = my_state.borrow();
@@ -366,6 +479,13 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             codec,
         );
         method_channel.invoke_method("commit_surface", Some(Box::new(commit_message)), None);
+    }
+
+    fn destroyed(&mut self, _surface: &WlSurface) {
+        let view_id = with_states(_surface, |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+        self.surfaces.remove(&view_id);
     }
 }
 

@@ -1794,6 +1794,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "input-linux",
+ "lazy_static",
  "log",
  "profiling",
  "serde",
