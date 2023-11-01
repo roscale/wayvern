@@ -292,16 +292,16 @@ impl FlutterEngine {
         Ok(())
     }
 
-    pub fn register_external_texture(&self, texture_id: u64) -> Result<(), Box<dyn std::error::Error>> {
-        let result = unsafe { FlutterEngineRegisterExternalTexture(self.handle, texture_id as i64) };
+    pub fn register_external_texture(&self, texture_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineRegisterExternalTexture(self.handle, texture_id) };
         if result != 0 {
             return Err(format!("Could not register external texture, error {result}").into());
         }
         Ok(())
     }
 
-    pub fn mark_external_texture_frame_available(&self, texture_id: u64) -> Result<(), Box<dyn std::error::Error>> {
-        let result = unsafe { FlutterEngineMarkExternalTextureFrameAvailable(self.handle, texture_id as i64) };
+    pub fn mark_external_texture_frame_available(&self, texture_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineMarkExternalTextureFrameAvailable(self.handle, texture_id) };
         if result != 0 {
             return Err(format!("Could not mark external texture frame available, error {result}").into());
         }

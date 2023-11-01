@@ -8,7 +8,7 @@ use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 pub struct SurfaceCommitMessage {
     pub view_id: u64,
     pub role: Option<&'static str>,
-    pub texture_id: u64,
+    pub texture_id: i64,
     pub buffer_delta: Option<Point<i32, Logical>>,
     pub buffer_size: Option<Size<i32, BufferCoords>>,
     pub scale: i32,

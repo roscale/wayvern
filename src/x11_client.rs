@@ -36,7 +36,6 @@ use smithay::{
     utils::DeviceFd,
 };
 use smithay::backend::renderer::gles::ffi::RGBA8;
-use smithay::backend::renderer::gles::format::fourcc_to_gl_formats;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::Texture;
 use smithay::reexports::calloop::channel;
@@ -171,25 +170,18 @@ pub fn run_x11_client() {
 
     state.flutter_engine = Some(flutter_engine);
 
-    let mut method_channel: MethodChannel = MethodChannel::new(
+    let codec = Rc::new(StandardMethodCodec::new());
+
+    let tx_platform_message = state.tx_platform_message.take().unwrap();
+    let mut platform_method_channel = MethodChannel::<EncodableValue>::new(
         state.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-        "test_channel".to_string(),
-        Rc::new(StandardMethodCodec::new()),
+        "platform".to_string(),
+        codec,
     );
-
-    let (tx_test, rx_test) = channel::channel();
-
     // TODO: Provide a way to specify a channel directly, without registering a callback.
-    method_channel.set_method_call_handler(Some(Box::new(move |call, result| {
-        let _ = tx_test.send((call, result));
+    platform_method_channel.set_method_call_handler(Some(Box::new(move |method_call, result| {
+        tx_platform_message.send((method_call, result)).unwrap();
     })));
-
-    event_loop.handle().insert_source(rx_test, move |event, _, data| {
-        if let Msg((_method, mut result)) = event {
-            data.state.running.store(false, Ordering::SeqCst);
-            result.success(Some(EncodableValue::String("Hello from Rust!".to_string())));
-        };
-    }).unwrap();
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
@@ -229,6 +221,10 @@ pub fn run_x11_client() {
                 data.state.is_next_vblank_scheduled = false;
                 if let Some(baton) = data.baton.take() {
                     data.state.flutter_engine().on_vsync(baton).unwrap();
+                }
+                let start_time = std::time::Instant::now();
+                for surface in data.state.xdg_shell_state.toplevel_surfaces() {
+                    send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                 }
             }
             X11Event::Input(event) => handle_input(&event, data),
@@ -270,22 +266,19 @@ pub fn run_x11_client() {
             data.state.backend_data.x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);
         };
-        let start_time = std::time::Instant::now();
-        for surface in data.state.xdg_shell_state.toplevel_surfaces() {
-            send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-        }
     }).unwrap();
 
     event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
         if let Msg(texture_id) = event {
-            let texture = data.state.gles_texture_per_texture_id.get(&texture_id);
-            let _ = tx_external_texture_name.send(texture.map(|texture|
-                {
-                    let gl_format = fourcc_to_gl_formats(texture.format().unwrap()).map(|f| f.0);
-
-                    (texture.tex_id(), gl_format.unwrap_or(RGBA8))
-                })
-                .unwrap_or((0, RGBA8)));
+            let texture_swap_chain = data.state.texture_swapchains.get_mut(&texture_id);
+            let texture_id = match texture_swap_chain {
+                Some(texture) => {
+                    let texture = texture.start_read();
+                    texture.tex_id()
+                }
+                None => 0,
+            };
+            let _ = tx_external_texture_name.send((texture_id, RGBA8));
         }
     }).unwrap();
 

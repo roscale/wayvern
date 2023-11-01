@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::env::{remove_var, set_var};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -6,19 +7,21 @@ use std::sync::atomic::AtomicBool;
 
 use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell};
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportAll, Texture};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::input::pointer::CursorImageStatus;
-use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Clock, Monotonic, Rectangle, Serial, Size};
+use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, Size};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
+use smithay::wayland::compositor::{add_post_commit_hook, add_pre_commit_hook, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgShellHandler, XdgShellState};
@@ -28,9 +31,13 @@ use tracing::{info, warn};
 
 use crate::{Backend, CalloopData, ClientState};
 use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine::platform_channels::method_call::MethodCall;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::flutter_engine::wayland_messages::{SurfaceCommitMessage, XdgSurfaceCommitMessage};
+use crate::texture_swap_chain::TextureSwapChain;
 
 pub struct ServerState<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
@@ -42,7 +49,7 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub backend_data: Box<BackendData>,
     pub flutter_engine: Option<Box<FlutterEngine>>,
     pub next_view_id: u64,
-    pub next_texture_id: u64,
+    pub next_texture_id: i64,
     // space: Space<WindowElement>,
 
     pub mouse_position: (f64, f64),
@@ -53,9 +60,27 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub shm_state: ShmState,
     pub dmabuf_state: Option<DmabufState>,
 
-    pub gles_texture_per_texture_id: HashMap<i64, GlesTexture>,
     pub imported_dmabufs: Vec<Dmabuf>,
     pub gles_renderer: Option<GlesRenderer>,
+    pub texture_ids_per_view_id: HashMap<u64, Vec<i64>>,
+    pub view_id_per_texture_id: HashMap<i64, u64>,
+    pub texture_swapchains: HashMap<i64, TextureSwapChain>,
+
+    pub tx_platform_message: Option<channel::Sender<(MethodCall, Box<dyn MethodResult>)>>,
+}
+
+impl<BackendData: Backend + 'static> ServerState<BackendData> {
+    pub fn get_new_view_id(&mut self) -> u64 {
+        let view_id = self.next_view_id;
+        self.next_view_id += 1;
+        view_id
+    }
+
+    pub fn get_new_texture_id(&mut self) -> i64 {
+        let texture_id = self.next_texture_id;
+        self.next_texture_id += 1;
+        texture_id
+    }
 }
 
 impl<BackendData: Backend + 'static> ServerState<BackendData> {
@@ -113,6 +138,9 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
         remove_var("DISPLAY");
         set_var("WAYLAND_DISPLAY", &socket_name);
+        set_var("XDG_SESSION_TYPE", "wayland");
+        set_var("GDK_BACKEND", "wayland"); // Force GTK apps to run on Wayland.
+        set_var("QT_QPA_PLATFORM", "wayland"); // Force QT apps to run on Wayland.
 
         loop_handle
             .insert_source(
@@ -124,6 +152,40 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                         display.get_mut().dispatch_clients(&mut data.state).unwrap();
                     }
                     Ok(PostAction::Continue)
+                },
+            )
+            .expect("Failed to init wayland server source");
+
+        let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
+
+        macro_rules! extract {
+            ($e:expr, $p:path) => {
+                match $e {
+                    $p(value) => Some(value),
+                    _ => None,
+                }
+            };
+        }
+
+        loop_handle
+            .insert_source(
+                rx_platform_message,
+                |event, (), data| {
+                    if let Msg((method_call, mut result)) = event {
+                        result.success(None);
+                        // if method_call.method() == "pointer_hover" {
+                        //     let arguments = method_call.arguments().unwrap();
+                        //     let args = extract!(arguments, EncodableValue::Map).unwrap();
+                        //     let mut aadsf = HashMap::new();
+                        //     for (key, value) in args {
+                        //         let key = extract!(key, EncodableValue::String).unwrap();
+                        //         aadsf.insert(key.as_str(), value);
+                        //     }
+                        //     aadsf.get("view_id").unwrap();
+                        //
+                        // }
+                        // result.success(None);
+                    }
                 },
             )
             .expect("Failed to init wayland server source");
@@ -145,9 +207,12 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             seat_state,
             next_view_id: 1,
             next_texture_id: 1,
-            gles_texture_per_texture_id: HashMap::new(),
             imported_dmabufs: Vec::new(),
             gles_renderer: None,
+            texture_ids_per_view_id: HashMap::new(),
+            view_id_per_texture_id: HashMap::new(),
+            texture_swapchains: HashMap::new(),
+            tx_platform_message: Some(tx_platform_message),
         }
     }
 }
@@ -179,6 +244,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
 
 pub struct MySurfaceState {
     pub view_id: u64,
+    pub old_texture_size: Option<Size<i32, BufferCoords>>,
 }
 
 impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
@@ -190,66 +256,76 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
-    fn new_surface(&mut self, surface: &WlSurface) {
-        // add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
-        //     let maybe_dmabuf = with_states(surface, |surface_data| {
-        //         surface_data
-        //             .cached_state
-        //             .pending::<SurfaceAttributes>()
-        //             .buffer
-        //             .as_ref()
-        //             .and_then(|assignment| match assignment {
-        //                 BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
-        //                 _ => None,
-        //             })
-        //     });
-        //     if let Some(dmabuf) = maybe_dmabuf {
-        //         dbg!("da");
-        //     }
-        // })
-    }
-
     fn commit(&mut self, surface: &WlSurface) {
         // on_commit_buffer_handler::<Self>(surface);
 
         let commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
+
             let state = surface_data.cached_state.current::<SurfaceAttributes>();
 
             let my_state = surface_data.data_map.get_or_insert(|| {
-                let view_id = self.next_view_id;
-                self.next_view_id += 1;
-                MySurfaceState {
-                    view_id,
-                }
+                RefCell::new(MySurfaceState {
+                    view_id: self.get_new_view_id(),
+                    old_texture_size: None,
+                })
             });
 
+            let (view_id, old_texture_size) = {
+                let my_state = my_state.borrow();
+                (my_state.view_id, my_state.old_texture_size)
+            };
 
             let texture = state.buffer
                 .as_ref()
                 .and_then(|assignment| match assignment {
                     BufferAssignment::NewBuffer(buffer) => {
-                        self.gles_renderer.as_mut().unwrap().import_buffer(buffer, None, &[]).map(|t| t.ok()).flatten()
+                        self.gles_renderer.as_mut().unwrap().import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
                     },
                     _ => None,
                 });
 
             let (texture_id, size) = if let Some(texture) = texture {
                 let size = texture.size();
-                let texture_id = self.next_view_id;
-                self.next_texture_id += 1;
-                self.gles_texture_per_texture_id.insert(texture_id as i64, texture);
-                let _ = self.flutter_engine_mut().register_external_texture(texture_id);
-                let _ = self.flutter_engine_mut().mark_external_texture_frame_available(texture_id);
+
+                let size_changed = match old_texture_size {
+                    Some(old_size) => old_size != size,
+                    None => true,
+                };
+
+                my_state.borrow_mut().old_texture_size = Some(size);
+
+                let texture_id = match size_changed {
+                    true => None,
+                    false => self.texture_ids_per_view_id.get(&view_id).and_then(|v| v.last()).cloned(),
+                };
+
+                let texture_id = texture_id.unwrap_or_else(|| {
+                    let texture_id = self.get_new_texture_id();
+                    while self.texture_ids_per_view_id.entry(view_id).or_default().len() >= 2 {
+                        self.texture_ids_per_view_id.entry(view_id).or_default().remove(0);
+                    }
+
+                    self.texture_ids_per_view_id.entry(view_id).or_default().push(texture_id);
+                    self.view_id_per_texture_id.insert(texture_id, view_id);
+                    self.flutter_engine_mut().register_external_texture(texture_id).unwrap();
+                    texture_id
+                });
+
+                let swapchain = self.texture_swapchains.entry(texture_id).or_default();
+                swapchain.commit(texture.clone());
+
+                self.flutter_engine_mut().mark_external_texture_frame_available(texture_id).unwrap();
+
                 (texture_id, Some(size))
             } else {
-                (0, None)
+                (-1, None)
             };
 
             SurfaceCommitMessage {
-                view_id: my_state.view_id,
+                view_id,
                 role,
-                texture_id,
+                texture_id: dbg!(texture_id),
                 buffer_delta: state.buffer_delta,
                 buffer_size: size,
                 scale: state.buffer_scale,
@@ -258,11 +334,11 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                     Some(xdg::XDG_TOPLEVEL_ROLE | xdg::XDG_POPUP_ROLE) => {
                         let geometry = surface_data
                             .cached_state
-                            .pending::<SurfaceCachedState>()
+                            .current::<SurfaceCachedState>()
                             .geometry;
 
                         Some(XdgSurfaceCommitMessage {
-                            mapped: texture_id != 0,
+                            mapped: texture_id != -1,
                             role,
                             geometry: match geometry {
                                 Some(geometry) => Some(geometry),
@@ -289,7 +365,6 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             "platform".to_string(),
             codec,
         );
-        dbg!(&commit_message);
         method_channel.invoke_method("commit_surface", Some(Box::new(commit_message)), None);
     }
 }
