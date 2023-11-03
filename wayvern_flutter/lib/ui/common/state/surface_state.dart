@@ -80,8 +80,6 @@ class SurfaceStates extends _$SurfaceStates {
       currentTexture = textureId;
     }
 
-    print("new texture ${textureId.value} for $viewId");
-
     state = state.copyWith(
       role: role,
       textureId: currentTexture,

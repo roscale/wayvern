@@ -30,7 +30,7 @@ class SubsurfaceStates extends _$SubsurfaceStates {
   SubsurfaceState build(int viewId) {
     return SubsurfaceState(
       position: Offset.zero,
-      mapped: false,
+      mapped: true,
       widgetKey: GlobalKey(),
     );
   }

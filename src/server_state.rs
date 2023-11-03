@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use smithay::{delegate_compositor, delegate_dmabuf, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell};
+use smithay::{delegate_compositor, delegate_data_device, delegate_dmabuf, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::{ImportAll, Texture};
@@ -21,11 +21,13 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::Xdg
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, Size};
+use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, SERIAL_COUNTER, Size};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{add_post_commit_hook, add_pre_commit_hook, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states};
+use smithay::wayland::compositor::{add_post_commit_hook, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler};
+use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
 use smithay::wayland::shm::{ShmHandler, ShmState};
@@ -39,7 +41,7 @@ use crate::flutter_engine::platform_channels::method_call::MethodCall;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
-use crate::flutter_engine::wayland_messages::{SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
+use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
 use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;
 
@@ -50,6 +52,7 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub clock: Clock<Monotonic>,
     pub seat: Seat<ServerState<BackendData>>,
     pub seat_state: SeatState<ServerState<BackendData>>,
+    pub data_device_state: DataDeviceState,
     pub pointer: PointerHandle<ServerState<BackendData>>,
     pub backend_data: Box<BackendData>,
     pub flutter_engine: Option<Box<FlutterEngine>>,
@@ -106,7 +109,7 @@ delegate_shm!(@<BackendData: Backend + 'static> ServerState<BackendData>);
 delegate_dmabuf!(@<BackendData: Backend + 'static> ServerState<BackendData>);
 delegate_output!(@<BackendData: Backend + 'static> ServerState<BackendData>);
 delegate_seat!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-// delegate_data_device!(App);
+delegate_data_device!(@<BackendData: Backend + 'static> ServerState<BackendData>);
 
 impl<BackendData: Backend + 'static> ServerState<BackendData> {
     pub fn new(
@@ -127,6 +130,8 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
         let pointer = seat.add_pointer();
+
+        let data_device_state = DataDeviceState::new::<Self>(&display_handle);
 
         // init wayland clients
         let source = ListeningSocketSource::new_auto().unwrap();
@@ -208,7 +213,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                         Some((surface.clone(), (0, 0).into())),
                                         &MotionEvent {
                                             location: (x, y).into(),
-                                            serial: Serial::from(0), // TODO
+                                            serial: SERIAL_COUNTER.next_serial(), // TODO
                                             time: now,
                                         },
                                     );
@@ -228,7 +233,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                     None,
                                     &MotionEvent {
                                         location: (0.0, 0.0).into(),
-                                        serial: Serial::from(0), // TODO
+                                        serial: SERIAL_COUNTER.next_serial(), // TODO
                                         time: now,
                                     },
                                 );
@@ -242,7 +247,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 pointer.button(
                                     &mut data.state,
                                     &ButtonEvent {
-                                        serial: Serial::from(0), // TODO
+                                        serial: SERIAL_COUNTER.next_serial(), // TODO
                                         time: now,
                                         button: *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button as u32)).unwrap() as u32,
                                         state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
@@ -300,6 +305,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             dmabuf_state,
             seat,
             seat_state,
+            data_device_state,
             pointer,
             next_view_id: 1,
             next_texture_id: 1,
@@ -407,9 +413,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
-        // on_commit_buffer_handler::<Self>(surface);
-
-        let commit_message = with_states(surface, |surface_data| {
+        let mut commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
 
             let state = surface_data.cached_state.current::<SurfaceAttributes>();
@@ -419,7 +423,6 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 let my_state = my_state.borrow();
                 (my_state.view_id, my_state.old_texture_size)
             };
-
 
             let texture = state.buffer
                 .as_ref()
@@ -467,12 +470,10 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 (-1, None)
             };
 
-            dbg!("commit {}", surface.id());
-
             SurfaceCommitMessage {
                 view_id,
                 role,
-                texture_id: dbg!(texture_id),
+                texture_id,
                 buffer_delta: state.buffer_delta,
                 buffer_size: size,
                 scale: state.buffer_scale,
@@ -516,9 +517,43 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                         })
                     }
                     _ => None,
-                }
+                },
+                subsurfaces_below: vec![],
+                subsurfaces_above: vec![],
             }
         });
+
+        let mut subsurfaces_below = vec![];
+        let mut subsurfaces_above = vec![];
+        let mut above = false;
+
+        with_surface_tree_upward(surface, (), |child_surface, _, ()| {
+            // Only traverse the direct children of the surface
+            if child_surface == surface {
+                TraversalAction::DoChildren(())
+            } else {
+                TraversalAction::SkipChildren
+            }
+        }, |child_surface, surface_data, ()| {
+            if child_surface == surface {
+                above = true;
+                return;
+            }
+
+            let subsurface_commit_message = SubsurfaceCommitMessage {
+                view_id: surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id,
+                location: surface_data.cached_state.current::<SubsurfaceCachedState>().location,
+            };
+
+            if above {
+                subsurfaces_above.push(subsurface_commit_message);
+            } else {
+                subsurfaces_below.push(subsurface_commit_message);
+            }
+        }, |_, _, _| true);
+
+        commit_message.subsurfaces_below = subsurfaces_below;
+        commit_message.subsurfaces_above = subsurfaces_above;
 
         let commit_message = commit_message.serialize();
 
@@ -583,5 +618,19 @@ impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
 
+    }
+}
+
+impl<BackendData: Backend> SelectionHandler for ServerState<BackendData> {
+    type SelectionUserData = ();
+}
+
+impl<BackendData: Backend> ClientDndGrabHandler for ServerState<BackendData> {}
+
+impl<BackendData: Backend> ServerDndGrabHandler for ServerState<BackendData> {}
+
+impl<BackendData: Backend> DataDeviceHandler for ServerState<BackendData> {
+    fn data_device_state(&self) -> &DataDeviceState {
+        &self.data_device_state
     }
 }

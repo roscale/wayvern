@@ -350,24 +350,15 @@ class PlatformApi extends _$PlatformApi {
             ),
           );
 
-      print("MERGE1");
       bool hasXdgPopup = event["has_xdg_popup"];
-      print("MERGE2");
       if (hasXdgPopup) {
         dynamic xdgPopup = event["xdg_popup"];
-        print("MERGE3");
         int parentId = xdgPopup["parent_id"];
-        print("MERGE4");
         int x = xdgPopup["x"];
-        print("MERGE5");
         int y = xdgPopup["y"];
         // TODO: What to do with these?
-        print("MERGE6");
         int width = xdgPopup["width"];
-        print("MERGE7");
         int height = xdgPopup["height"];
-
-        print("MERGE8");
 
         ref.read(xdgPopupStatesProvider(viewId).notifier).commit(
               parentViewId: parentId,
