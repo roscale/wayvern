@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::os::fd::FromRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
 use std::sync::atomic::Ordering;
+use rustix::fs::OFlags;
 
 use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
@@ -400,11 +401,11 @@ impl ServerState<DrmBackend> {
             .session
             .open(
                 path,
-                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
+                OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
             )
             .map_err(DeviceAddError::DeviceOpen)?;
 
-        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) });
+        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd.as_raw_fd()) });
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
 
         let registration_token = self

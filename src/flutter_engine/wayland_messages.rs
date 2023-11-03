@@ -14,12 +14,18 @@ pub struct SurfaceCommitMessage {
     pub scale: i32,
     pub input_region: Option<RegionAttributes>,
     pub xdg_surface: Option<XdgSurfaceCommitMessage>,
+    pub xdg_popup: Option<XdgPopupCommitMessage>,
 }
 
 pub struct XdgSurfaceCommitMessage {
     pub mapped: bool,
     pub role: Option<&'static str>,
     pub geometry: Option<Rectangle<i32, Logical>>,
+}
+
+pub struct XdgPopupCommitMessage {
+    pub parent_id: u64,
+    pub geometry: Rectangle<i32, Logical>,
 }
 
 impl SurfaceCommitMessage {
@@ -56,11 +62,22 @@ impl SurfaceCommitMessage {
             vec.extend([
                 (EncodableValue::String("has_xdg_surface".to_string()), EncodableValue::Bool(true)),
                 (EncodableValue::String("xdg_surface".to_string()), xdg_surface.serialize()),
-                (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(false)),
                 (EncodableValue::String("has_toplevel_decoration".to_string()), EncodableValue::Bool(false)),
                 (EncodableValue::String("has_toplevel_title".to_string()), EncodableValue::Bool(false)),
                 (EncodableValue::String("has_toplevel_app_id".to_string()), EncodableValue::Bool(false)),
             ]);
+
+            if let Some(xdg_popup) = self.xdg_popup {
+                vec.extend([
+                    (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(true)),
+                    (EncodableValue::String("xdg_popup".to_string()), xdg_popup.serialize()),
+                ]);
+            } else {
+                vec.push(
+                    (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(false)),
+                );
+            }
+
         } else {
             vec.push(
                 (EncodableValue::String("has_xdg_surface".to_string()), EncodableValue::Bool(false)),
@@ -86,6 +103,18 @@ impl XdgSurfaceCommitMessage {
             (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.loc.y).unwrap_or(0) as i64)),
             (EncodableValue::String("width".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.size.w).unwrap_or(0) as i64)),
             (EncodableValue::String("height".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.size.h).unwrap_or(0) as i64)),
+        ])
+    }
+}
+
+impl XdgPopupCommitMessage {
+    pub fn serialize(self) -> EncodableValue {
+        EncodableValue::Map(vec![
+            (EncodableValue::String("parent_id".to_string()), EncodableValue::Int64(self.parent_id as i64)),
+            (EncodableValue::String("x".to_string()), EncodableValue::Int64(self.geometry.loc.x as i64)),
+            (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.geometry.loc.y as i64)),
+            (EncodableValue::String("width".to_string()), EncodableValue::Int64(self.geometry.size.w as i64)),
+            (EncodableValue::String("height".to_string()), EncodableValue::Int64(self.geometry.size.h as i64)),
         ])
     }
 }

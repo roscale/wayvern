@@ -41,6 +41,7 @@ use smithay::backend::renderer::Texture;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 
@@ -134,10 +135,10 @@ pub fn run_x11_client() {
         .build()
         .unwrap();
     let mut dmabuf_state = DmabufState::new();
-    let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
-        &display.handle(),
-        &dmabuf_default_feedback,
-    );
+    // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
+    //     &display.handle(),
+    //     &dmabuf_default_feedback,
+    // );
 
     let mut state = ServerState::new(
         display,
@@ -156,7 +157,7 @@ pub fn run_x11_client() {
     );
 
     let (
-        mut flutter_engine,
+        flutter_engine,
         EmbedderChannels {
             rx_present,
             rx_request_fbo,
@@ -289,7 +290,7 @@ pub fn run_x11_client() {
             baton,
         };
 
-        let result = event_loop.dispatch(Duration::from_secs(1), &mut calloop_data);
+        let result = event_loop.dispatch(None, &mut calloop_data);
 
         CalloopData {
             state,
