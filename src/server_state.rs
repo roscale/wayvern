@@ -486,7 +486,6 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                             .geometry;
 
                         Some(XdgSurfaceCommitMessage {
-                            mapped: texture_id != -1,
                             role,
                             geometry: match geometry {
                                 Some(geometry) => Some(geometry),

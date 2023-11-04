@@ -22,7 +22,6 @@ pub struct SurfaceCommitMessage {
 
 #[derive(Debug)]
 pub struct XdgSurfaceCommitMessage {
-    pub mapped: bool,
     pub role: Option<&'static str>,
     pub geometry: Option<Rectangle<i32, Logical>>,
 }
@@ -102,7 +101,6 @@ impl SurfaceCommitMessage {
 impl XdgSurfaceCommitMessage {
     pub fn serialize(self) -> EncodableValue {
         EncodableValue::Map(vec![
-            (EncodableValue::String("mapped".to_string()), EncodableValue::Bool(self.mapped)),
             (EncodableValue::String("role".to_string()), EncodableValue::Int64(self.role.map(|role| {
                 match role {
                     xdg::XDG_TOPLEVEL_ROLE => 1,

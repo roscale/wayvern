@@ -67,15 +67,6 @@ class PlatformApi extends _$PlatformApi {
         case "commit_surface":
           _commitSurface(call.arguments);
           break;
-        case "unmap_xdg_surface":
-          _unmapXdgSurface(call.arguments);
-          break;
-        case "map_subsurface":
-          _mapSubsurface(call.arguments);
-          break;
-        case "unmap_subsurface":
-          _unmapSubsurface(call.arguments);
-          break;
         case "send_text_input_event":
           _sendTextInputEvent(call.arguments);
           break;
@@ -304,7 +295,10 @@ class PlatformApi extends _$PlatformApi {
       subsurfaceIdsBelow.add(id);
 
       var position = Offset(x.toDouble(), y.toDouble());
-      ref.read(subsurfaceStatesProvider(id).notifier).commit(position: position);
+      ref.read(subsurfaceStatesProvider(id).notifier).commit(
+            parent: viewId,
+            position: position,
+          );
     }
 
     for (dynamic subsurface in subsurfacesAbove) {
@@ -315,7 +309,10 @@ class PlatformApi extends _$PlatformApi {
       subsurfaceIdsAbove.add(id);
 
       var position = Offset(x.toDouble(), y.toDouble());
-      ref.read(subsurfaceStatesProvider(id).notifier).commit(position: position);
+      ref.read(subsurfaceStatesProvider(id).notifier).commit(
+            parent: viewId,
+            position: position,
+          );
     }
 
     ref.read(surfaceStatesProvider(viewId).notifier).commit(
@@ -333,7 +330,6 @@ class PlatformApi extends _$PlatformApi {
     if (hasXdgSurface) {
       dynamic xdgSurface = event["xdg_surface"];
       int role = xdgSurface["role"];
-      bool mapped = xdgSurface["mapped"];
       int x = xdgSurface["x"];
       int y = xdgSurface["y"];
       int width = xdgSurface["width"];
@@ -341,7 +337,6 @@ class PlatformApi extends _$PlatformApi {
 
       ref.read(xdgSurfaceStatesProvider(viewId).notifier).commit(
             role: XdgSurfaceRole.values[role],
-            mapped: mapped,
             visibleBounds: Rect.fromLTWH(
               x.toDouble(),
               y.toDouble(),
@@ -385,23 +380,6 @@ class PlatformApi extends _$PlatformApi {
       String appId = event["toplevel_app_id"];
       ref.read(xdgToplevelStatesProvider(viewId).notifier).setAppId(appId);
     }
-  }
-
-  void _unmapXdgSurface(dynamic event) async {
-    int viewId = event["view_id"];
-
-    ref.read(xdgSurfaceStatesProvider(viewId).notifier).unmap();
-  }
-
-  void _mapSubsurface(dynamic event) {
-    int viewId = event["view_id"];
-
-    ref.read(subsurfaceStatesProvider(viewId).notifier).map(true);
-  }
-
-  void _unmapSubsurface(dynamic event) {
-    int viewId = event["view_id"];
-    ref.read(subsurfaceStatesProvider(viewId).notifier).map(false);
   }
 
   void _sendTextInputEvent(dynamic event) {
