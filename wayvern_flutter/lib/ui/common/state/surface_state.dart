@@ -93,6 +93,12 @@ class SurfaceStates extends _$SurfaceStates {
     );
   }
 
+  void unmap() {
+    state = state.copyWith(
+      role: SurfaceRole.none,
+    );
+  }
+
   void dispose() {
     // Cascading dispose of all surface roles.
     switch (state.role) {

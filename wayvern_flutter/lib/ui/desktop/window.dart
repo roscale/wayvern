@@ -193,7 +193,6 @@ class _OpenCloseAnimationsState extends ConsumerState<_OpenCloseAnimations> {
           onEnd: () {
             if (!forward) {
               ref.read(windowStackProvider.notifier).remove(widget.viewId);
-              print("remove");
             }
           },
         ),

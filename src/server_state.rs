@@ -570,6 +570,16 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
         self.surfaces.remove(&view_id);
+
+        let codec = Rc::new(StandardMethodCodec::new());
+        let mut method_channel = MethodChannel::new(
+            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
+            "platform".to_string(),
+            codec,
+        );
+        method_channel.invoke_method("destroy_surface", Some(Box::new(EncodableValue::Map(vec![
+            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+        ]))), None);
     }
 }
 

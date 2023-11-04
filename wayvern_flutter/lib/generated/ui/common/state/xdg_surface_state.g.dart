@@ -6,7 +6,7 @@ part of '../../../../ui/common/state/xdg_surface_state.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$xdgSurfaceStatesHash() => r'9aba813d2b681d8e33a00566681c9e59d02ecba9';
+String _$xdgSurfaceStatesHash() => r'def7803523154cdaa9fcb46a8bf7439a682cc0ca';
 
 /// Copied from Dart SDK
 class _SystemHash {

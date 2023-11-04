@@ -419,6 +419,7 @@ class PlatformApi extends _$PlatformApi {
 
   void _destroySurface(dynamic event) async {
     int viewId = event["view_id"];
+    ref.read(surfaceStatesProvider(viewId).notifier).unmap();
     // TODO: Find a better way. Maybe store subscriptions in a list.
     // 3 sec is more than enough for any close animations.
     await Future.delayed(const Duration(seconds: 3));
