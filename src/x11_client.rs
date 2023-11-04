@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
 use log::{error, warn};
 use smithay::{
@@ -35,13 +34,11 @@ use smithay::{
     },
     utils::DeviceFd,
 };
-use smithay::backend::renderer::gles::ffi::RGBA8;
+use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::Texture;
-use smithay::reexports::calloop::channel;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 
@@ -200,6 +197,7 @@ pub fn run_x11_client() {
     let gles_renderer = unsafe { GlesRenderer::new(egl_context) }.expect("Failed to initialize GLES");
 
     state.gles_renderer = Some(gles_renderer);
+    state.gl = Some(Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _));
 
     event_loop
         .handle()
