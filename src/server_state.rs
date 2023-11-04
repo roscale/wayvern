@@ -10,6 +10,7 @@ use smithay::{delegate_compositor, delegate_data_device, delegate_dmabuf, delega
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::{ImportAll, Texture};
+use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent, PointerHandle};
@@ -17,19 +18,18 @@ use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostActio
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, SERIAL_COUNTER, Size};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{add_post_commit_hook, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
+use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler};
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::shell::xdg;
-use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
+use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData};
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::socket::ListeningSocketSource;
 use tracing::{info, warn};
@@ -58,7 +58,6 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub flutter_engine: Option<Box<FlutterEngine>>,
     pub next_view_id: u64,
     pub next_texture_id: i64,
-    // space: Space<WindowElement>,
 
     pub mouse_position: (f64, f64),
     pub is_next_vblank_scheduled: bool,
@@ -70,8 +69,10 @@ pub struct ServerState<BackendData: Backend + 'static> {
 
     pub imported_dmabufs: Vec<Dmabuf>,
     pub gles_renderer: Option<GlesRenderer>,
+    pub gl: Option<Gles2>,
     pub surfaces: HashMap<u64, WlSurface>,
-    pub xdg_toplevels: HashMap<u64, XdgToplevel>,
+    pub xdg_toplevels: HashMap<u64, ToplevelSurface>,
+    pub xdg_popups: HashMap<u64, PopupSurface>,
     pub texture_ids_per_view_id: HashMap<u64, Vec<i64>>,
     pub view_id_per_texture_id: HashMap<i64, u64>,
     pub texture_swapchains: HashMap<i64, TextureSwapChain>,
@@ -130,6 +131,9 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
         let pointer = seat.add_pointer();
+
+        // TODO: remove when https://github.com/Smithay/smithay/pull/1201 is merged
+        SERIAL_COUNTER.next_serial();
 
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
 
@@ -263,7 +267,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 let activate = extract!(args[1], EncodableValue::Bool);
 
                                 if let Some(toplevel) = data.state.xdg_toplevels.get(&(view_id as u64)) {
-                                    let toplevel = data.state.xdg_shell_state.get_toplevel(toplevel).unwrap();
+                                    let toplevel = data.state.xdg_shell_state.get_toplevel(toplevel.xdg_toplevel()).unwrap();
                                     toplevel.with_pending_state(|state| {
                                         if activate {
                                             state.states.set(xdg_toplevel::State::Activated);
@@ -311,8 +315,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             next_texture_id: 1,
             imported_dmabufs: Vec::new(),
             gles_renderer: None,
+            gl: None,
             surfaces: HashMap::new(),
             xdg_toplevels: HashMap::new(),
+            xdg_popups: HashMap::new(),
             texture_ids_per_view_id: HashMap::new(),
             view_id_per_texture_id: HashMap::new(),
             texture_swapchains: HashMap::new(),
@@ -334,16 +340,18 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
-        self.xdg_toplevels.insert(view_id, surface.xdg_toplevel().clone());
+        self.xdg_toplevels.insert(view_id, surface.clone());
 
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Activated);
         });
-        surface.send_configure();
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
-        // Handle popup creation here
+        let view_id = with_states(_surface.wl_surface(), |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+        self.xdg_popups.insert(view_id, _surface.clone());
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
@@ -377,31 +385,6 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
-        add_post_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
-            // dbg!(surface.id());
-            // with_states(surface, |surface_data| {
-            //     let st = surface_data
-            //         .cached_state
-            //         .pending::<SurfaceAttributes>();
-            //     let buf =
-            //
-            //         st.buffer
-            //             .as_ref();
-            //
-            //     dbg!(surface.handle());
-            //     dbg!(buf);
-            //
-            //     let a = buf.and_then(|assignment| match assignment {
-            //         BufferAssignment::NewBuffer(buffer) => Some(1),
-            //         _ => None,
-            //     });
-            //     dbg!(a);
-            // });
-        });
-
-
-
-
         let view_id = self.get_new_view_id();
         with_states(surface, |surface_data| {
             surface_data.data_map.insert_if_missing(|| RefCell::new(MySurfaceState {
@@ -413,6 +396,43 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        let view_id = with_states(surface, |states| {
+            states.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+        if let Some(toplevel) = self.xdg_toplevels.get(&view_id) {
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
+
+            if !initial_configure_sent {
+                toplevel.send_configure();
+            }
+        }
+
+        if let Some(popup) = self.xdg_popups.get(&view_id) {
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<XdgPopupSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
+
+            if !initial_configure_sent {
+                // NOTE: This should never fail as the initial configure is always
+                // allowed.
+                popup.send_configure().expect("initial configure failed");
+            }
+        }
+
         let mut commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
 
@@ -434,6 +454,8 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 });
 
             let (texture_id, size) = if let Some(texture) = texture {
+                unsafe { self.gl.as_ref().unwrap().Finish(); }
+
                 let size = texture.size();
 
                 let size_changed = match old_texture_size {
