@@ -26,7 +26,7 @@ use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler};
+use smithay::wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler, set_data_device_focus};
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData};
@@ -60,6 +60,7 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub next_texture_id: i64,
 
     pub mouse_position: (f64, f64),
+    pub view_id_under_cursor: Option<u64>,
     pub is_next_vblank_scheduled: bool,
 
     pub compositor_state: CompositorState,
@@ -211,13 +212,15 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 let x = *extract!(get_value(args, "x"), EncodableValue::Double);
                                 let y = *extract!(get_value(args, "y"), EncodableValue::Double);
 
+                                data.state.view_id_under_cursor = Some(view_id as u64);
+
                                 if let Some(surface) = data.state.surfaces.get(&(view_id as u64)).cloned() {
                                     pointer.motion(
                                         &mut data.state,
                                         Some((surface.clone(), (0, 0).into())),
                                         &MotionEvent {
                                             location: (x, y).into(),
-                                            serial: SERIAL_COUNTER.next_serial(), // TODO
+                                            serial: SERIAL_COUNTER.next_serial(),
                                             time: now,
                                         },
                                     );
@@ -232,12 +235,14 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 }
                             }
                             "pointer_exit" => {
+                                data.state.view_id_under_cursor = None;
+
                                 pointer.motion(
                                     &mut data.state,
                                     None,
                                     &MotionEvent {
                                         location: (0.0, 0.0).into(),
-                                        serial: SERIAL_COUNTER.next_serial(), // TODO
+                                        serial: SERIAL_COUNTER.next_serial(),
                                         time: now,
                                     },
                                 );
@@ -251,7 +256,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 pointer.button(
                                     &mut data.state,
                                     &ButtonEvent {
-                                        serial: SERIAL_COUNTER.next_serial(), // TODO
+                                        serial: SERIAL_COUNTER.next_serial(),
                                         time: now,
                                         button: *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button as u32)).unwrap() as u32,
                                         state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
@@ -261,28 +266,41 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 result.success(None);
                             }
                             "activate_window" => {
+                                println!("A");
+
                                 let args = method_call.arguments().unwrap();
                                 let args = extract!(args, EncodableValue::List);
                                 let view_id = args[0].long_value().unwrap();
                                 let activate = extract!(args[1], EncodableValue::Bool);
 
-                                if let Some(toplevel) = data.state.xdg_toplevels.get(&(view_id as u64)) {
-                                    let toplevel = data.state.xdg_shell_state.get_toplevel(toplevel.xdg_toplevel()).unwrap();
-                                    toplevel.with_pending_state(|state| {
-                                        if activate {
-                                            state.states.set(xdg_toplevel::State::Activated);
-                                        } else {
-                                            state.states.unset(xdg_toplevel::State::Activated);
+                                let pointer = data.state.seat.get_pointer().unwrap();
+                                let keyboard = data.state.seat.get_keyboard().unwrap();
+
+                                let serial = SERIAL_COUNTER.next_serial();
+
+                                if !pointer.is_grabbed() {
+                                    let toplevel = data.state.xdg_toplevels.get(&(view_id as u64)).cloned();
+                                    if let Some(toplevel) = toplevel {
+                                        toplevel.with_pending_state(|state| {
+                                            if activate {
+                                                state.states.set(xdg_toplevel::State::Activated);
+                                            } else {
+                                                state.states.unset(xdg_toplevel::State::Activated);
+                                            }
+                                        });
+                                        keyboard.set_focus(&mut data.state, Some(toplevel.wl_surface().clone()), serial);
+
+                                        for toplevel in data.state.xdg_toplevels.values() {
+                                            toplevel.send_pending_configure();
                                         }
-                                    });
-                                    toplevel.send_configure();
-                                    result.success(None);
-                                } else {
-                                    result.error(
-                                        "surface_doesnt_exist".to_string(),
-                                        format!("Surface {view_id} doesn't exist"),
-                                        None,
-                                    );
+                                        result.success(None);
+                                    } else {
+                                        result.error(
+                                            "surface_doesnt_exist".to_string(),
+                                            format!("Surface {view_id} doesn't exist"),
+                                            None,
+                                        );
+                                    }
                                 }
                             }
                             _ => {
@@ -301,6 +319,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             clock,
             backend_data: Box::new(backend_data),
             mouse_position: (0.0, 0.0),
+            view_id_under_cursor: None,
             is_next_vblank_scheduled: false,
             compositor_state,
             xdg_shell_state,
@@ -359,7 +378,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
     }
 
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
-        // TODO
+        surface.send_repositioned(token);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
@@ -645,8 +664,11 @@ impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&WlSurface>) {
-
+        let dh = &self.display_handle;
+        let client = target.and_then(|s| dh.get_client(s.id()).ok());
+        set_data_device_focus(dh, seat, client);
     }
+
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
 
     }

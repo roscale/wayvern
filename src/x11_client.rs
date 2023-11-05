@@ -37,6 +37,7 @@ use smithay::{
 use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::Texture;
+use smithay::output::{Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::wayland_server::protocol::wl_shm;
@@ -68,6 +69,23 @@ pub fn run_x11_client() {
         .title("Anvil")
         .build(&x11_handle)
         .expect("Failed to create first window");
+
+    let mode = Mode {
+        size: (window.size().w as i32, window.size().h as i32).into(),
+        refresh: 144_000,
+    };
+    let output = Output::new(
+        "x11".to_string(),
+        PhysicalProperties {
+            size: (0, 0).into(),
+            subpixel: Subpixel::Unknown,
+            make: "Wayvern".into(),
+            model: "x11".into(),
+        },
+    );
+    let _global = output.create_global::<ServerState<X11Data>>(&display_handle);
+    output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
+    output.set_preferred(mode);
 
     let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
         .map(|x| {
@@ -212,6 +230,9 @@ pub fn run_x11_client() {
                     size,
                     refresh: 144_000,
                 };
+
+                output.change_current_state(Some(data.state.backend_data.mode), None, None, Some((0, 0).into()));
+                output.set_preferred(mode);
 
                 let _ = tx_output_height.send(new_size.h);
                 data.state.flutter_engine().send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
