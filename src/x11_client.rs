@@ -246,6 +246,9 @@ pub fn run_x11_client() {
                 for surface in data.state.xdg_shell_state.toplevel_surfaces() {
                     send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                 }
+                for surface in data.state.xdg_popups.values() {
+                    send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+                }
             }
             X11Event::Input(event) => handle_input(&event, data),
         })
