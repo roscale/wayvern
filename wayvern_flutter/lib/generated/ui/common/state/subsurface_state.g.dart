@@ -155,7 +155,7 @@ class _SubsurfaceWidgetProviderElement extends ProviderElement<Subsurface>
   int get viewId => (origin as SubsurfaceWidgetProvider).viewId;
 }
 
-String _$subsurfaceStatesHash() => r'72486f2c1eeee0fd4e2408d89a5c0f6e85bdd6cd';
+String _$subsurfaceStatesHash() => r'30e609cd91a810f3477db020d3264d91d4d50686';
 
 abstract class _$SubsurfaceStates extends BuildlessNotifier<SubsurfaceState> {
   late final int viewId;

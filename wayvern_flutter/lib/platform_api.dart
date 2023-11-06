@@ -4,6 +4,7 @@ import 'dart:ffi' show Finalizable;
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:zenith/ui/common/state/subsurface_state.dart';
+import 'package:zenith/ui/common/state/surface_ids.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
 import 'package:zenith/ui/common/state/xdg_popup_state.dart';
@@ -246,6 +247,8 @@ class PlatformApi extends _$PlatformApi {
 
   void _commitSurface(dynamic event) {
     int viewId = event["view_id"];
+    ref.read(surfaceIdsProvider.notifier).update((state) => state.add(viewId));
+
     dynamic surface = event["surface"];
     int role = surface["role"];
 
@@ -281,38 +284,18 @@ class PlatformApi extends _$PlatformApi {
       bottom.toDouble(),
     );
 
-    List<dynamic> subsurfacesBelow = surface["subsurfaces_below"];
-    List<dynamic> subsurfacesAbove = surface["subsurfaces_above"];
+    List<dynamic> subsurfaceBelow = surface["subsurfaces_below"];
+    List<dynamic> subsurfaceAbove = surface["subsurfaces_above"];
 
-    List<int> subsurfaceIdsBelow = [];
-    List<int> subsurfaceIdsAbove = [];
+    List<int> subsurfaceIdsBelow = subsurfaceBelow.cast<int>();
+    List<int> subsurfaceIdsAbove = subsurfaceAbove.cast<int>();
 
-    for (dynamic subsurface in subsurfacesBelow) {
-      int id = subsurface["id"];
-      int x = subsurface["x"];
-      int y = subsurface["y"];
-
-      subsurfaceIdsBelow.add(id);
-
-      var position = Offset(x.toDouble(), y.toDouble());
-      ref.read(subsurfaceStatesProvider(id).notifier).commit(
-            parent: viewId,
-            position: position,
-          );
+    for (int id in subsurfaceIdsBelow) {
+      ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
     }
 
-    for (dynamic subsurface in subsurfacesAbove) {
-      int id = subsurface["id"];
-      int x = subsurface["x"];
-      int y = subsurface["y"];
-
-      subsurfaceIdsAbove.add(id);
-
-      var position = Offset(x.toDouble(), y.toDouble());
-      ref.read(subsurfaceStatesProvider(id).notifier).commit(
-            parent: viewId,
-            position: position,
-          );
+    for (int id in subsurfaceIdsAbove) {
+      ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
     }
 
     ref.read(surfaceStatesProvider(viewId).notifier).commit(
@@ -360,6 +343,17 @@ class PlatformApi extends _$PlatformApi {
               position: Offset(x.toDouble(), y.toDouble()),
             );
       }
+    }
+
+    bool hasSubsurface = event["has_subsurface"];
+    if (hasSubsurface) {
+      dynamic subsurface = event["subsurface"];
+      int x = subsurface["x"];
+      int y = subsurface["y"];
+      var position = Offset(x.toDouble(), y.toDouble());
+      ref.read(subsurfaceStatesProvider(viewId).notifier).commit(
+            position: position,
+          );
     }
 
     bool hasToplevelDecoration = event["has_toplevel_decoration"];
@@ -424,6 +418,7 @@ class PlatformApi extends _$PlatformApi {
     // 3 sec is more than enough for any close animations.
     await Future.delayed(const Duration(seconds: 3));
     ref.read(surfaceStatesProvider(viewId).notifier).dispose();
+    ref.read(surfaceIdsProvider.notifier).update((state) => state.remove(viewId));
   }
 
   Future<void> hideKeyboard(int viewId) {

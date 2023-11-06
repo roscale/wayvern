@@ -23,6 +23,7 @@ use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial, SERIAL_COUNTER, Size};
 use smithay::wayland::buffer::BufferHandler;
+use smithay::wayland::compositor;
 use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
 use smithay::wayland::seat::WaylandFocus;
@@ -132,9 +133,6 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
         let pointer = seat.add_pointer();
-
-        // TODO: remove when https://github.com/Smithay/smithay/pull/1201 is merged
-        SERIAL_COUNTER.next_serial();
 
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
 
@@ -266,8 +264,6 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 result.success(None);
                             }
                             "activate_window" => {
-                                println!("A");
-
                                 let args = method_call.arguments().unwrap();
                                 let args = extract!(args, EncodableValue::List);
                                 let view_id = args[0].long_value().unwrap();
@@ -553,7 +549,15 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
                         Some(XdgPopupCommitMessage {
                             parent_id,
-                            geometry: popup_data.current.geometry,
+                            geometry: dbg!(popup_data.current.geometry),
+                        })
+                    }
+                    _ => None,
+                },
+                subsurface: match role {
+                    Some(compositor::SUBSURFACE_ROLE) => {
+                        Some(SubsurfaceCommitMessage {
+                            location: surface_data.cached_state.current::<SubsurfaceCachedState>().location,
                         })
                     }
                     _ => None,
@@ -580,15 +584,11 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 return;
             }
 
-            let subsurface_commit_message = SubsurfaceCommitMessage {
-                view_id: surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id,
-                location: surface_data.cached_state.current::<SubsurfaceCachedState>().location,
-            };
-
+            let view_id = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id;
             if above {
-                subsurfaces_above.push(subsurface_commit_message);
+                subsurfaces_above.push(view_id);
             } else {
-                subsurfaces_below.push(subsurface_commit_message);
+                subsurfaces_below.push(view_id);
             }
         }, |_, _, _| true);
 

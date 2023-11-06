@@ -155,7 +155,7 @@ class _SurfaceWidgetProviderElement extends ProviderElement<Surface>
   int get viewId => (origin as SurfaceWidgetProvider).viewId;
 }
 
-String _$surfaceStatesHash() => r'ed5a25727f5ecd88078e90fe597a6c6a75f94afe';
+String _$surfaceStatesHash() => r'9d292503b8280003f333d367754673ab0187a5c1';
 
 abstract class _$SurfaceStates extends BuildlessNotifier<SurfaceState> {
   late final int viewId;
