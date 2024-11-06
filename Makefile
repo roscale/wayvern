@@ -29,11 +29,13 @@ $(DEPS_DIR)/debug/libflutter_engine.so:
 $(DEPS_DIR)/profile/libflutter_engine.so:
 	curl -L https://github.com/sony/flutter-embedded-linux/releases/download/$(ENGINE_REVISION)/elinux-$(ARCH)-profile.zip >/tmp/elinux-$(ARCH)-profile.zip
 	unzip -o /tmp/elinux-$(ARCH)-profile.zip -d /tmp || exit
+	mkdir -p $(DEPS_DIR)/profile
 	mv /tmp/libflutter_engine.so $(DEPS_DIR)/profile
 
 $(DEPS_DIR)/release/libflutter_engine.so:
 	curl -L https://github.com/sony/flutter-embedded-linux/releases/download/$(ENGINE_REVISION)/elinux-$(ARCH)-release.zip >/tmp/elinux-$(ARCH)-release.zip
 	unzip -o /tmp/elinux-$(ARCH)-release.zip -d /tmp || exit
+	mkdir -p $(DEPS_DIR)/release
 	mv /tmp/libflutter_engine.so $(DEPS_DIR)/release
 
 cargo_debug:
