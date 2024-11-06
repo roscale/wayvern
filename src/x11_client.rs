@@ -24,7 +24,6 @@ use smithay::{
     },
     output::Mode,
     reexports::{
-        ash::vk::ExtPhysicalDeviceDrmFn,
         calloop::EventLoop,
         gbm::{
             self,
@@ -38,6 +37,8 @@ use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::Texture;
 use smithay::output::{Output, PhysicalProperties, Subpixel};
+use smithay::reexports::ash::vk;
+use smithay::reexports::ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::wayland_server::protocol::wl_shm;
@@ -62,7 +63,7 @@ pub fn run_x11_client() {
     let (node, fd) = x11_handle.drm_node().expect("Could not get DRM node used by X server");
 
     let gbm_device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
-    let egl_display = egl::EGLDisplay::new(gbm_device.clone()).expect("Failed to create EGLDisplay");
+    let egl_display = unsafe { egl::EGLDisplay::new(gbm_device.clone()) }.expect("Failed to create EGLDisplay");
     let egl_context = egl::EGLContext::new(&egl_display).expect("Failed to create EGLContext");
 
     let window = x11::WindowBuilder::new()
@@ -99,7 +100,7 @@ pub fn run_x11_client() {
             .and_then(|instance| {
                 vulkan::PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
                     devices
-                        .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
+                        .filter(|phd| phd.has_device_extension(EXT_PHYSICAL_DEVICE_DRM_NAME))
                         .find(|phd| {
                             phd.primary_node().unwrap() == Some(node)
                                 || phd.render_node().unwrap() == Some(node)
@@ -139,7 +140,7 @@ pub fn run_x11_client() {
                         .iter()
                         .map(|format| format.modifier),
                 ).expect("Failed to create X11 surface")
-        },
+        }
     };
 
     let dmabuf_formats = egl_context.dmabuf_texture_formats()
@@ -250,7 +251,8 @@ pub fn run_x11_client() {
                     send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                 }
             }
-            X11Event::Input(event) => handle_input(&event, data),
+            X11Event::Input { event, window_id: _ } => handle_input(&event, data),
+            X11Event::Focus { .. } => {}
         })
         .expect("Failed to insert X11 Backend into event loop");
 

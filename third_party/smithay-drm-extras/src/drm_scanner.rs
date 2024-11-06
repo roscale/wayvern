@@ -7,7 +7,7 @@
 //!
 //! ### Example
 //! ```no_run
-//! # mod helpers { include!("docs/doctest_helpers.rs"); };
+//! # mod helpers { include!("./docs/doctest_helpers.rs"); };
 //! # let drm_device: helpers::FakeDevice = todo!();
 //! use smithay_drm_extras::drm_scanner::{DrmScanner, DrmScanEvent};
 //!
@@ -15,8 +15,8 @@
 //!
 //! for event in scanner.scan_connectors(&drm_device) {
 //!     match event {
-//!         DrmScanEvent::Connected { .. } => {}
-//!         DrmScanEvent::Disconnected { .. } => {}
+//!         DrmScanEvent::Connected { .. } => {},
+//!         DrmScanEvent::Disconnected { .. } => {},
 //!     }
 //! }
 //! ```
@@ -85,12 +85,12 @@ where
     /// Should be called on every device changed event
     ///
     /// ```no_run
-    /// # mod helpers { include!("docs/doctest_helpers.rs"); };
+    /// # mod helpers { include!("./docs/doctest_helpers.rs"); };
     /// # let drm_device: helpers::FakeDevice = todo!();
     /// use smithay_drm_extras::drm_scanner::{DrmScanner, DrmScanEvent};
     ///
     /// let mut scanner: DrmScanner = DrmScanner::new();
-    /// let res = scanner.scan_connectors(&drm_device);
+    /// let res = scanner.scan_connectors(&drm_device).expect("failed to scan connectors");
     ///
     /// // You can extract scan info manually
     /// println!("Plugged {} connectors", res.added.len());
@@ -99,13 +99,13 @@ where
     /// // Or simply iterate over it
     /// for event in res {
     ///     match event {
-    ///         DrmScanEvent::Connected { .. } => {}
-    ///         DrmScanEvent::Disconnected { .. } => {}
+    ///         DrmScanEvent::Connected { .. } => {},
+    ///         DrmScanEvent::Disconnected { .. } => {},
     ///     }
     /// }
     /// ```
-    pub fn scan_connectors(&mut self, drm: &impl ControlDevice) -> DrmScanResult {
-        let scan = self.connectors.scan(drm);
+    pub fn scan_connectors(&mut self, drm: &impl ControlDevice) -> std::io::Result<DrmScanResult> {
+        let scan = self.connectors.scan(drm)?;
 
         let removed = scan
             .disconnected
@@ -128,10 +128,10 @@ where
             })
             .collect();
 
-        DrmScanResult {
+        Ok(DrmScanResult {
             disconnected: removed,
             connected: added,
-        }
+        })
     }
 
     /// Get map of all connectors, connected and disconnected ones.

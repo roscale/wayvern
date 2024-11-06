@@ -76,8 +76,8 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 y: data.state.mouse_position.1,
                 device: 0,
                 signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindScroll,
-                scroll_delta_x: event.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 10.0,
-                scroll_delta_y: event.amount_discrete(input::Axis::Vertical).unwrap_or(0.0) * 10.0,
+                scroll_delta_x: event.amount_v120(input::Axis::Horizontal).unwrap_or(0.0) * 10.0,
+                scroll_delta_y: event.amount_v120(input::Axis::Vertical).unwrap_or(0.0) * 10.0,
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
                 buttons: data.state.flutter_engine().mouse_button_tracker.get_flutter_button_bitmask(),
                 pan_x: 0.0,
@@ -91,7 +91,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
                 return;
             }
 
-            if event.key_code() == KEY_ESC as u32 {
+            if event.key_code().raw() == KEY_ESC as u32 {
                 data.state.running.store(false, Ordering::SeqCst);
             }
         }
@@ -113,6 +113,7 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopDat
         InputEvent::TabletToolTip { .. } => {}
         InputEvent::TabletToolButton { .. } => {}
         InputEvent::Special(_) => {}
+        InputEvent::SwitchToggle { .. } => {}
     }
 }
 

@@ -25,7 +25,8 @@ use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Rectangle, Serial
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_upward};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::output::OutputHandler;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler, set_data_device_focus};
 use smithay::wayland::selection::SelectionHandler;
@@ -215,7 +216,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                 if let Some(surface) = data.state.surfaces.get(&(view_id as u64)).cloned() {
                                     pointer.motion(
                                         &mut data.state,
-                                        Some((surface.clone(), (0, 0).into())),
+                                        Some((surface.clone(), (0.0, 0.0).into())),
                                         &MotionEvent {
                                             location: (x, y).into(),
                                             serial: SERIAL_COUNTER.next_serial(),
@@ -451,7 +452,8 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         let mut commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
 
-            let state = surface_data.cached_state.current::<SurfaceAttributes>();
+            let mut state = surface_data.cached_state.get::<SurfaceAttributes>();
+            let state = state.current();
             let my_state = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap();
 
             let (view_id, old_texture_size) = {
@@ -464,7 +466,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 .and_then(|assignment| match assignment {
                     BufferAssignment::NewBuffer(buffer) => {
                         self.gles_renderer.as_mut().unwrap().import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
-                    },
+                    }
                     _ => None,
                 });
 
@@ -519,7 +521,8 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                     Some(xdg::XDG_TOPLEVEL_ROLE | xdg::XDG_POPUP_ROLE) => {
                         let geometry = surface_data
                             .cached_state
-                            .current::<SurfaceCachedState>()
+                            .get::<SurfaceCachedState>()
+                            .current()
                             .geometry;
 
                         Some(XdgSurfaceCommitMessage {
@@ -535,7 +538,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                                 }),
                             },
                         })
-                    },
+                    }
                     _ => None,
                 },
                 xdg_popup: match role {
@@ -557,7 +560,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 subsurface: match role {
                     Some(compositor::SUBSURFACE_ROLE) => {
                         Some(SubsurfaceCommitMessage {
-                            location: surface_data.cached_state.current::<SubsurfaceCachedState>().location,
+                            location: surface_data.cached_state.get::<SubsurfaceCachedState>().current().location,
                         })
                     }
                     _ => None,
@@ -635,9 +638,9 @@ impl<BackendData: Backend> DmabufHandler for ServerState<BackendData> {
         self.dmabuf_state.as_mut().unwrap()
     }
 
-    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf, notifier: ImportNotifier) {
         self.imported_dmabufs.push(_dmabuf);
-        Ok(())
+        notifier.successful::<ServerState<BackendData>>().expect("Failed to notify successful import");
     }
 }
 
@@ -658,6 +661,7 @@ impl<BackendData: Backend> DmabufHandler for ServerState<BackendData> {
 impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<ServerState<BackendData>> {
         &mut self.seat_state
@@ -669,9 +673,7 @@ impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
         set_data_device_focus(dh, seat, client);
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-
-    }
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {}
 }
 
 impl<BackendData: Backend> SelectionHandler for ServerState<BackendData> {
@@ -687,3 +689,5 @@ impl<BackendData: Backend> DataDeviceHandler for ServerState<BackendData> {
         &self.data_device_state
     }
 }
+
+impl<BackendData: Backend> OutputHandler for ServerState<BackendData> {}

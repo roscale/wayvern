@@ -29,8 +29,8 @@ class SingleLogicalKeyReleaseActivator extends ShortcutActivator {
   SingleLogicalKeyReleaseActivator(this.key);
 
   @override
-  bool accepts(RawKeyEvent event, RawKeyboard state) {
-    if (event is! RawKeyUpEvent) {
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    if (event is! KeyUpEvent) {
       return false;
     }
     return event.logicalKey == key;

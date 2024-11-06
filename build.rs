@@ -1,6 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
+use bindgen::CargoCallbacks;
 
 fn main() {
     generate_embedder_bindings();
@@ -13,7 +14,7 @@ fn generate_embedder_bindings() {
 
     let bindings = bindgen::Builder::default()
         .header(embedder_header_path)
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");
 

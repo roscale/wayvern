@@ -38,9 +38,8 @@ use smithay::utils::{DeviceFd, Point, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use smithay::wayland::drm_lease::DrmLease;
 use tracing::{error, info, warn};
-
-use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
-use smithay_drm_extras::edid::EdidInfo;
+use smithay_drm_extras::display_info;
+use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanResult, DrmScanner};
 
 use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
 use crate::flutter_engine::FlutterEngine;
@@ -297,7 +296,7 @@ impl ServerState<DrmBackend> {
             slot
         } else {
             // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
-            surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
+            surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
             surface.compositor.queue_frame(None).unwrap();
             return;
         };
@@ -353,7 +352,7 @@ impl ServerState<DrmBackend> {
             Kind::Cursor,
         );
 
-        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>, GlesTexture>(
+        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(
             gles_renderer,
             &[flutter_texture_element, cursor_element],
             [0.0, 0.0, 0.0, 0.0],
@@ -431,7 +430,7 @@ impl ServerState<DrmBackend> {
             .unwrap();
 
         let gbm_device = GbmDevice::new(fd.clone()).map_err(DeviceAddError::GbmDevice)?;
-        let egl_display = EGLDisplay::new(gbm_device.clone()).expect("Failed to create EGLDisplay");
+        let egl_display = unsafe { EGLDisplay::new(gbm_device.clone()) }.expect("Failed to create EGLDisplay");
         let render_node = EGLDevice::device_for_display(&egl_display)
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
@@ -504,8 +503,8 @@ impl ServerState<DrmBackend> {
             })
             .unwrap_or(false);
 
-        let (make, model) = EdidInfo::for_connector(&device.drm_device, connector.handle())
-            .map(|info| (info.manufacturer, info.model))
+        let (make, model) = display_info::for_connector(&device.drm_device, connector.handle())
+            .map(|info| (info.make().unwrap_or("Unknown".into()), info.model().unwrap_or("Unknown".into())))
             .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
 
         if non_desktop {
@@ -604,7 +603,7 @@ impl ServerState<DrmBackend> {
         // Start first frame with a solid color. This will trigger the first VBLank event.
         surface
             .compositor
-            .render_frame::<_, TextureRenderElement<_>, GlesTexture>(
+            .render_frame::<_, TextureRenderElement<_>>(
                 self.gles_renderer.as_mut().unwrap(),
                 &[],
                 [0.0, 0.0, 0.0, 0.0])
@@ -643,11 +642,12 @@ impl ServerState<DrmBackend> {
             return;
         };
 
-        for event in device.drm_scanner.scan_connectors(&device.drm_device) {
-            match event {
-                DrmScanEvent::Connected { connector, crtc: Some(crtc) } => self.connector_connected(node, connector, crtc),
-                DrmScanEvent::Disconnected { connector, crtc: Some(crtc) } => self.connector_disconnected(node, connector, crtc),
-                _ => {}
+        if let Ok(result) = device.drm_scanner.scan_connectors(&device.drm_device) {
+            for event in result {
+                match event {
+                    DrmScanEvent::Connected { connector, crtc } => self.connector_connected(node, connector, crtc.unwrap()),
+                    DrmScanEvent::Disconnected { connector, crtc } => self.connector_disconnected(node, connector, crtc.unwrap()),
+                }
             }
         }
     }
