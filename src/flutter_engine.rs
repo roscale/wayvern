@@ -22,7 +22,7 @@ use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::Dispatcher;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
-use crate::{Backend, CalloopData, flutter_engine::{
+use crate::{CalloopData, flutter_engine::{
     callbacks::{
         clear_current,
         fbo_callback,
@@ -46,6 +46,7 @@ use crate::{Backend, CalloopData, flutter_engine::{
         FlutterWindowMetricsEvent,
     },
 }, ServerState};
+use crate::backends::Backend;
 use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
 use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;

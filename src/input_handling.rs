@@ -1,18 +1,13 @@
 use std::mem::size_of;
-use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
-use input_linux::sys::KEY_ESC;
-use smithay::backend::input;
-use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyboardKeyEvent, KeyState, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
-
-use crate::{Backend, CalloopData};
+use crate::backends::Backend;
 use crate::flutter_engine::embedder::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, FlutterPointerEvent, FlutterPointerPhase_kDown, FlutterPointerPhase_kHover, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp, FlutterPointerSignalKind_kFlutterPointerSignalKindNone, FlutterPointerSignalKind_kFlutterPointerSignalKindScroll};
 use crate::flutter_engine::FlutterEngine;
-use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use crate::CalloopData;
+use input_linux::sys::KEY_ESC;
+use smithay::backend::input;
+use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
 
 pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut CalloopData<impl Backend>) {
     match event {

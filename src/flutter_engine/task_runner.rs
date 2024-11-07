@@ -24,7 +24,7 @@ impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         // Flip the ordering so that the BinaryHeap becomes a min-heap.
         // Smaller target times have higher priority.
-        // In case of a tie we compare the task ID.
+        // In case of a tie, we compare the task ID.
         // This step is necessary to make implementations of `PartialEq` and `Ord` consistent.
         other.1.cmp(&self.1).then_with(|| self.0.task.cmp(&other.0.task))
     }

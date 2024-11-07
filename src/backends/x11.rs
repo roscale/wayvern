@@ -1,56 +1,32 @@
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
-
 use log::{error, warn};
-use smithay::{
-    backend::{
-        allocator::{
-            dmabuf::DmabufAllocator,
-            gbm::GbmAllocator,
-            vulkan::{ImageUsageFlags, VulkanAllocator},
-        },
-        egl::{
-            self,
-        },
-        vulkan::{
-            self,
-            version::Version,
-        },
-        x11::{
-            self,
-            X11Event,
-            X11Surface,
-        },
-    },
-    output::Mode,
-    reexports::{
-        calloop::EventLoop,
-        gbm::{
-            self,
-            BufferObjectFlags as GbmBufferFlags,
-        },
-        wayland_server::Display,
-    },
-    utils::DeviceFd,
-};
+use smithay::backend::{egl, vulkan, x11};
+use smithay::backend::allocator::dmabuf::DmabufAllocator;
+use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
+use smithay::backend::allocator::vulkan::{ImageUsageFlags, VulkanAllocator};
 use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::Texture;
-use smithay::output::{Output, PhysicalProperties, Subpixel};
-use smithay::reexports::ash::vk;
+use smithay::backend::vulkan::version::Version;
+use smithay::backend::x11::{X11Event, X11Surface};
+use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME;
 use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
+use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::gbm;
+use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::protocol::wl_shm;
+use smithay::utils::DeviceFd;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
-
-use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, send_frames_surface_tree, ServerState};
-use crate::flutter_engine::FlutterEngine;
-use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
+use crate::{send_frames_surface_tree, CalloopData};
+use crate::backends::Backend;
+use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
+use crate::server_state::ServerState;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();

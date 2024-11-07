@@ -10,6 +10,7 @@ pub struct Cursor {
     icons: Vec<Image>,
     size: u32,
 }
+
 impl Cursor {
     pub fn load() -> Cursor {
         let name = std::env::var("XCURSOR_THEME")

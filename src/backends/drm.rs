@@ -2,12 +2,10 @@ use std::collections::HashMap;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
 use std::sync::atomic::Ordering;
-
 use rustix::fs::OFlags;
-use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
-use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
-use smithay::backend::allocator::gbm::GbmDevice;
+use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
+use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::{CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmNode, NodeType};
 use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::egl;
@@ -22,29 +20,26 @@ use smithay::backend::session::{libseat, Session};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
-use smithay::output::{Output, PhysicalProperties, Subpixel};
-use smithay::output::Mode;
+use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::channel::Event;
-use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::calloop::RegistrationToken;
+use smithay::reexports::calloop::{EventLoop, RegistrationToken};
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags};
 use smithay::reexports::drm::Device as _;
 use smithay::reexports::input::Libinput;
+use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::reexports::wayland_server::backend::GlobalId;
-use smithay::reexports::wayland_server::Display;
-use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{DeviceFd, Point, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use smithay::wayland::drm_lease::DrmLease;
 use tracing::{error, info, warn};
 use smithay_drm_extras::display_info;
-use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanResult, DrmScanner};
-
-use crate::{Backend, CalloopData, flutter_engine::EmbedderChannels, ServerState};
-use crate::flutter_engine::FlutterEngine;
-use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
+use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
+use crate::backends::Backend;
+use crate::CalloopData;
+use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::input_handling::handle_input;
+use crate::server_state::ServerState;
 
 pub struct DrmBackend {
     pub session: LibSeatSession,
@@ -163,7 +158,7 @@ pub fn run_drm_backend() {
 
     // Start the Flutter engine.
     let (
-        mut flutter_engine,
+        flutter_engine,
         EmbedderChannels {
             rx_present,
             rx_request_fbo,

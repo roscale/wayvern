@@ -27,21 +27,23 @@ use smithay::{
     },
 };
 use smithay::reexports::calloop::{channel, EventSource};
-
+use crate::backends::Backend;
+use crate::backends::drm::run_drm_backend;
+use crate::backends::x11::run_x11_client;
 use crate::flutter_engine::FlutterEngine;
 use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::mouse_button_tracker::MouseButtonTracker;
 use crate::server_state::ServerState;
 
 mod flutter_engine;
-mod x11_client;
 mod gles_framebuffer_importer;
 mod mouse_button_tracker;
-mod drm_backend;
 mod input_handling;
 mod cursor;
 mod server_state;
 mod texture_swap_chain;
+mod protocols;
+mod backends;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -51,16 +53,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok() {
-        x11_client::run_x11_client();
+        run_x11_client();
     } else {
-        drm_backend::run_drm_backend();
+        run_drm_backend();
     }
 
     Ok(())
-}
-
-pub trait Backend {
-    fn seat_name(&self) -> String;
 }
 
 pub struct FlutterState {
