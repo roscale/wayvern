@@ -24,5 +24,5 @@ impl<BackendData: Backend> SeatHandler for ServerState<BackendData> {
         set_data_device_focus(dh, seat, client);
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
 }

@@ -411,6 +411,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
+name = "embedder_sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1058,6 +1065,14 @@ name = "pkg-config"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
+
+[[package]]
+name = "platform_channels"
+version = "0.1.0"
+dependencies = [
+ "embedder_sys",
+ "serde_json",
+]
 
 [[package]]
 name = "polling"
@@ -1892,9 +1907,11 @@ name = "wayvern"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "embedder_sys",
  "input-linux",
  "lazy_static",
  "log",
+ "platform_channels",
  "profiling",
  "rustix",
  "serde",

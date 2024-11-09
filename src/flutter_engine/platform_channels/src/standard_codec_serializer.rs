@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
-use crate::flutter_engine::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::byte_streams::{ByteStreamReader, ByteStreamWriter};
+use crate::encodable_value::EncodableValue;
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -75,7 +75,7 @@ impl EncodableValue {
 }
 
 #[derive(Default, Copy, Clone)]
-pub(crate) struct StandardCodecSerializer;
+pub struct StandardCodecSerializer;
 
 impl StandardCodecSerializer {
     pub fn new() -> Self {

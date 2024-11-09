@@ -5,8 +5,8 @@ use smithay::backend::renderer::gles::ffi;
 use tracing::error;
 
 use crate::flutter_engine::{Baton, FlutterEngine};
-use crate::flutter_engine::embedder::{FlutterDamage, FlutterOpenGLTexture, FlutterPlatformMessage, FlutterPresentInfo, FlutterRect, FlutterTask, FlutterTransformation};
-use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
+use embedder_sys::{FlutterDamage, FlutterOpenGLTexture, FlutterPlatformMessage, FlutterPresentInfo, FlutterRect, FlutterTask, FlutterTransformation};
+use platform_channels::binary_messenger::BinaryMessenger;
 
 pub unsafe extern "C" fn make_current(user_data: *mut c_void) -> bool {
     let flutter_engine = &mut *(user_data as *mut FlutterEngine);
@@ -15,7 +15,7 @@ pub unsafe extern "C" fn make_current(user_data: *mut c_void) -> bool {
         Err(err) => {
             error!("{}", err);
             false
-        },
+        }
     }
 }
 
@@ -26,7 +26,7 @@ pub unsafe extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
         Err(err) => {
             error!("{}", err);
             false
-        },
+        }
     }
 }
 
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn clear_current(user_data: *mut c_void) -> bool {
         Err(err) => {
             error!("{}", err);
             false
-        },
+        }
     }
 }
 
@@ -137,14 +137,14 @@ pub unsafe extern "C" fn platform_message_callback(message: *const FlutterPlatfo
 pub unsafe extern "C" fn gl_external_texture_frame_callback(
     user_data: *mut c_void,
     texture_id: i64,
-    width: usize,
-    height: usize,
+    _width: usize,
+    _height: usize,
     texture_out: *mut FlutterOpenGLTexture,
 ) -> bool {
     let flutter_engine = &mut *(user_data as *mut FlutterEngine);
     let channels = &mut flutter_engine.data.channels;
 
-    let (texture_name, format) = channels.tx_request_external_texture_name.send(texture_id).ok().and_then(|()| {
+    let (texture_name, _format) = channels.tx_request_external_texture_name.send(texture_id).ok().and_then(|()| {
         channels.rx_external_texture_name.recv().ok()
     }).unwrap_or((0, ffi::RGBA8));
 

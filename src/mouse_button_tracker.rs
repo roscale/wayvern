@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use lazy_static::lazy_static;
 
-use crate::flutter_engine::embedder::{
+use embedder_sys::{
     FlutterPointerMouseButtons_kFlutterPointerButtonMouseBack,
     FlutterPointerMouseButtons_kFlutterPointerButtonMouseForward,
     FlutterPointerMouseButtons_kFlutterPointerButtonMouseMiddle,

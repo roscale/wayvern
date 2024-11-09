@@ -22,9 +22,9 @@ use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use crate::{send_frames_surface_tree, CalloopData};
 use crate::backends::Backend;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::method_channel::MethodChannel;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::input_handling::handle_input;
 use crate::server_state::ServerState;
 
@@ -123,10 +123,10 @@ pub fn run_x11_client() {
         .iter()
         .copied()
         .collect::<Vec<_>>();
-    let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+    let _dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
-    let mut dmabuf_state = DmabufState::new();
+    let dmabuf_state = DmabufState::new();
     // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
     //     &display.handle(),
     //     &dmabuf_default_feedback,

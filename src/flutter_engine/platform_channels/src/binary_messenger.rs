@@ -1,4 +1,4 @@
-use crate::flutter_engine::embedder::FlutterPlatformMessage;
+use embedder_sys::FlutterPlatformMessage;
 
 pub type BinaryReply = Option<Box<dyn FnMut(Option<&[u8]>)>>;
 

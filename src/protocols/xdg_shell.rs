@@ -1,18 +1,14 @@
 use std::cell::RefCell;
-use std::ops::Deref;
-use std::rc::Rc;
 use smithay::delegate_xdg_shell;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
-use smithay::reexports::wayland_server::protocol::wl_seat;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
 use crate::backends::Backend;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::server_state::{MySurfaceState, ServerState};
 
 delegate_xdg_shell!(@<BackendData: Backend + 'static> ServerState<BackendData>);
@@ -69,7 +65,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
         );
     }
 
-    fn move_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial) {
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, _serial: Serial) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
@@ -85,7 +81,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
         );
     }
 
-    fn resize_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial, edges: ResizeEdge) {
+    fn resize_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, _serial: Serial, edges: ResizeEdge) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
@@ -103,11 +99,11 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
     }
 
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // Handle popup grab here
     }
 
-    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
+    fn reposition_request(&mut self, surface: PopupSurface, _positioner: PositionerState, token: u32) {
         surface.send_repositioned(token);
     }
 

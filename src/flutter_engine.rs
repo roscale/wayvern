@@ -1,6 +1,6 @@
 use std::ffi::{c_int, CString};
 use std::mem::size_of;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::os::unix::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
@@ -22,47 +22,43 @@ use smithay::{
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::Dispatcher;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-
-use crate::{CalloopData, flutter_engine::{
-    callbacks::{
-        clear_current,
-        fbo_callback,
-        make_current,
-        make_resource_current,
-        present_with_info,
-        surface_transformation,
-    },
-    embedder::{
-        FLUTTER_ENGINE_VERSION,
-        FlutterEngine as FlutterEngineHandle,
-        FlutterEngineGetCurrentTime,
-        FlutterEngineOnVsync,
-        FlutterEngineRun,
-        FlutterEngineSendWindowMetricsEvent,
-        FlutterEngineShutdown,
-        FlutterOpenGLRendererConfig,
-        FlutterProjectArgs,
-        FlutterRendererConfig,
-        FlutterRendererConfig__bindgen_ty_1,
-        FlutterWindowMetricsEvent,
-    },
-}, ServerState};
+use embedder_sys::{
+    FlutterEngine as FlutterEngineHandle,
+    FlutterEngineGetCurrentTime,
+    FlutterEngineOnVsync,
+    FlutterEngineRun,
+    FlutterEngineSendWindowMetricsEvent,
+    FlutterEngineShutdown,
+    FlutterOpenGLRendererConfig,
+    FlutterProjectArgs,
+    FlutterRendererConfig,
+    FlutterRendererConfig__bindgen_ty_1,
+    FlutterWindowMetricsEvent,
+    FLUTTER_ENGINE_VERSION,
+};
+use crate::{flutter_engine::callbacks::{
+    clear_current,
+    fbo_callback,
+    make_current,
+    make_resource_current,
+    present_with_info,
+    surface_transformation,
+}, CalloopData, ServerState};
 use crate::backends::Backend;
 use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
-use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
-use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
-use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use embedder_sys::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
+use platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+use platform_channels::method_channel::MethodChannel;
+use platform_channels::method_codec::MethodCodec;
+use platform_channels::method_result::MethodResult;
 use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 use crate::mouse_button_tracker::MouseButtonTracker;
 
 mod callbacks;
-pub mod embedder;
-pub mod platform_channels;
 pub mod task_runner;
 pub mod wayland_messages;
+pub mod method_result_mpsc_channel;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
@@ -227,7 +223,7 @@ impl FlutterEngine {
 
         this.handle = flutter_engine;
 
-        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |deadline, _, data: &mut CalloopData<BackendData>| {
+        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |_deadline, _, data: &mut CalloopData<BackendData>| {
             let duration = data.state.flutter_engine_mut().task_runner.execute_expired_tasks(move |task| {
                 unsafe { FlutterEngineRunTask(flutter_engine, task as *const _) };
             });

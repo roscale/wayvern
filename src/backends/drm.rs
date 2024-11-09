@@ -56,7 +56,7 @@ impl Backend for DrmBackend {
 }
 
 impl DrmBackend {
-    fn get_gpu_data(&self) -> &GpuData {
+    fn _get_gpu_data(&self) -> &GpuData {
         self.gpus.get(&self.primary_gpu).unwrap()
     }
 
@@ -165,8 +165,8 @@ pub fn run_drm_backend() {
             mut tx_fbo,
             tx_output_height: _,
             rx_baton,
-            rx_request_external_texture_name,
-            tx_external_texture_name,
+            rx_request_external_texture_name: _,
+            tx_external_texture_name: _,
         },
     ) = FlutterEngine::new(egl_context, &state).unwrap();
 

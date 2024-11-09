@@ -1,39 +1,25 @@
 use std::env;
 
-use smithay::{
-    backend::allocator::dmabuf::Dmabuf,
-    delegate_compositor,
-    delegate_dmabuf,
-    delegate_output,
-    delegate_shm,
-    delegate_xdg_shell,
-    reexports::{
-        wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::{
-                wl_surface::{self},
-            },
-        },
-    },
-    wayland::{
-        buffer::BufferHandler,
-        compositor::{
-            CompositorClientState, CompositorHandler, SurfaceAttributes,
-            TraversalAction, with_surface_tree_downward,
-        },
-        dmabuf::DmabufHandler,
-        shell::xdg::XdgShellHandler,
-        shm::ShmHandler,
-    },
-};
-use smithay::reexports::calloop::{channel, EventSource};
-use crate::backends::Backend;
 use crate::backends::drm::run_drm_backend;
 use crate::backends::x11::run_x11_client;
+use crate::backends::Backend;
 use crate::flutter_engine::FlutterEngine;
-use crate::flutter_engine::platform_channels::binary_messenger::BinaryMessenger;
 use crate::mouse_button_tracker::MouseButtonTracker;
 use crate::server_state::ServerState;
+use smithay::reexports::calloop::channel;
+use smithay::{
+    backend::allocator::dmabuf::Dmabuf,
+    reexports::wayland_server::{
+        backend::{ClientData, ClientId, DisconnectReason},
+        protocol::wl_surface::{self},
+    },
+    wayland::compositor::{
+        with_surface_tree_downward,
+        CompositorClientState,
+        SurfaceAttributes,
+        TraversalAction,
+    },
+};
 
 mod flutter_engine;
 mod gles_framebuffer_importer;

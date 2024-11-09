@@ -1,9 +1,9 @@
 use serde_json::Value;
-use crate::flutter_engine::platform_channels::json_message_codec::JsonMessageCodec;
-use crate::flutter_engine::platform_channels::message_codec::MessageCodec;
-use crate::flutter_engine::platform_channels::method_call::MethodCall;
-use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use crate::json_message_codec::JsonMessageCodec;
+use crate::message_codec::MessageCodec;
+use crate::method_call::MethodCall;
+use crate::method_codec::MethodCodec;
+use crate::method_result::MethodResult;
 
 const K_MESSAGE_METHOD_KEY: &str = "method";
 const K_MESSAGE_ARGUMENTS_KEY: &str = "args";
@@ -45,7 +45,7 @@ impl MethodCodec<serde_json::Value> for JsonMethodCodec {
 
     fn decode_and_process_response_envelope_internal(&self, response: &[u8], result: &mut dyn MethodResult<serde_json::Value>) -> bool {
         (|| {
-            let mut json_response = JsonMessageCodec {}.decode_message(response)?;
+            let json_response = JsonMessageCodec {}.decode_message(response)?;
             let mut json_response = match json_response {
                 Value::Array(vec) => vec,
                 _ => return None,

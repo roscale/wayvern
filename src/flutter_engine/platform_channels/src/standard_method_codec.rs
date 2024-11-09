@@ -1,10 +1,10 @@
-use crate::flutter_engine::platform_channels::byte_buffer_streams::{ByteBufferStreamReader, ByteBufferStreamWriter};
-use crate::flutter_engine::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_call::MethodCall;
-use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
-use crate::flutter_engine::platform_channels::standard_codec_serializer::StandardCodecSerializer;
+use crate::byte_buffer_streams::{ByteBufferStreamReader, ByteBufferStreamWriter};
+use crate::byte_streams::{ByteStreamReader, ByteStreamWriter};
+use crate::encodable_value::EncodableValue;
+use crate::method_call::MethodCall;
+use crate::method_codec::MethodCodec;
+use crate::method_result::MethodResult;
+use crate::standard_codec_serializer::StandardCodecSerializer;
 
 #[derive(Default, Copy, Clone)]
 pub struct StandardMethodCodec {

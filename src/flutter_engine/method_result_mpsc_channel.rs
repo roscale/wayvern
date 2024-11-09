@@ -4,10 +4,12 @@
 //! This way, it can be used with the Calloop event loop and access external state without having
 //! to capture the state inside closures.
 
+#![allow(dead_code)]
+
 use smithay::reexports::calloop::channel;
 
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::method_result::MethodResult;
 
 pub enum MethodResultEnum<T> {
     Success(Option<T>),

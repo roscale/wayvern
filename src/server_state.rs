@@ -1,7 +1,5 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env::{remove_var, set_var};
-use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,9 +30,9 @@ use smithay::wayland::socket::ListeningSocketSource;
 use tracing::{info, warn};
 
 use crate::backends::Backend;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_call::MethodCall;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::method_call::MethodCall;
+use platform_channels::method_result::MethodResult;
 use crate::flutter_engine::FlutterEngine;
 use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;

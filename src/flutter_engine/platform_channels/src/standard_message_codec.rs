@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::flutter_engine::platform_channels::byte_buffer_streams::{ByteBufferStreamReader, ByteBufferStreamWriter};
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::message_codec::MessageCodec;
-use crate::flutter_engine::platform_channels::standard_codec_serializer::StandardCodecSerializer;
+use crate::byte_buffer_streams::{ByteBufferStreamReader, ByteBufferStreamWriter};
+use crate::encodable_value::EncodableValue;
+use crate::message_codec::MessageCodec;
+use crate::standard_codec_serializer::StandardCodecSerializer;
 
 #[derive(Default)]
 pub struct StandardMessageCodec {

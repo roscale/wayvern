@@ -1,4 +1,4 @@
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::encodable_value::EncodableValue;
 
 #[derive(Debug)]
 pub struct MethodCall<T = EncodableValue> {
@@ -7,7 +7,7 @@ pub struct MethodCall<T = EncodableValue> {
 }
 
 impl<T> MethodCall<T> {
-    pub(crate) fn new(method: String, arguments: Option<Box<T>>) -> Self {
+    pub fn new(method: String, arguments: Option<Box<T>>) -> Self {
         Self {
             method,
             arguments,

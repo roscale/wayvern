@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::flutter_engine::platform_channels::binary_messenger::BinaryReply;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use crate::binary_messenger::BinaryReply;
+use crate::encodable_value::EncodableValue;
+use crate::method_codec::MethodCodec;
+use crate::method_result::MethodResult;
 
 struct ReplyManager {
     reply_handler: BinaryReply,

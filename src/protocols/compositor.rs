@@ -1,6 +1,6 @@
 use crate::backends::Backend;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
 use crate::server_state::{MySurfaceState, ServerState};
 use crate::ClientState;
@@ -135,7 +135,6 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 view_id,
                 role,
                 texture_id,
-                buffer_delta: state.buffer_delta,
                 buffer_size: size,
                 scale: state.buffer_scale,
                 input_region: state.input_region.clone(),

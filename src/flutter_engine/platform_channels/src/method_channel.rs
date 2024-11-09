@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
-use crate::flutter_engine::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::engine_method_result::EngineMethodResult;
-use crate::flutter_engine::platform_channels::method_call::MethodCall;
-use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
-use crate::flutter_engine::platform_channels::method_result::MethodResult;
+use crate::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
+use crate::encodable_value::EncodableValue;
+use crate::engine_method_result::EngineMethodResult;
+use crate::method_call::MethodCall;
+use crate::method_codec::MethodCodec;
+use crate::method_result::MethodResult;
 
 type MethodCallHandler<T> = Option<Box<dyn FnMut(MethodCall<T>, Box<dyn MethodResult<T>>)>>;
 

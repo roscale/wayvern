@@ -3,8 +3,8 @@ use std::ffi::{c_void, CString};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
-use crate::flutter_engine::embedder::{FlutterDataCallback, FlutterEngine as FlutterEngineHandle, FlutterEngineResult_kSuccess, FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse, FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle, FlutterPlatformMessageReleaseResponseHandle};
-use crate::flutter_engine::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
+use embedder_sys::{FlutterDataCallback, FlutterEngine as FlutterEngineHandle, FlutterEngineResult_kSuccess, FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse, FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle, FlutterPlatformMessageReleaseResponseHandle};
+use crate::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngineHandle,
@@ -31,7 +31,6 @@ extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut :
 }
 
 impl BinaryMessenger for BinaryMessengerImpl {
-
     fn handle_message(&mut self, message: &FlutterPlatformMessage) {
         let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
         let channel = channel.to_str().unwrap();

@@ -5,20 +5,20 @@ use std::time::Duration;
 
 use smithay::reexports::calloop::channel;
 
-use crate::flutter_engine::embedder::{FlutterEngineGetCurrentTime, FlutterTask};
+use embedder_sys::{FlutterEngineGetCurrentTime, FlutterTask};
 
 type TargetTime = u64;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone)]
 struct Task(FlutterTask, TargetTime);
 
-impl PartialEq<Self> for FlutterTask {
+impl PartialEq<Self> for Task {
     fn eq(&self, other: &Self) -> bool {
-        self.task == other.task
+        self.0.task == other.0.task
     }
 }
 
-impl Eq for FlutterTask {}
+impl Eq for Task {}
 
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {

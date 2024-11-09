@@ -5,6 +5,8 @@
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/third_party/smithay-drm-extras/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/third_party/smithay-drm-extras/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/flutter_engine/embedder_sys/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/flutter_engine/platform_channels/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/wayvern_flutter/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/wayvern_flutter/.pub" />

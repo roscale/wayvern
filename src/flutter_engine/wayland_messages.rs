@@ -3,14 +3,13 @@ use smithay::wayland::compositor;
 use smithay::wayland::compositor::{RectangleKind, RegionAttributes};
 use smithay::wayland::shell::xdg;
 
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use platform_channels::encodable_value::EncodableValue;
 
 #[derive(Debug)]
 pub struct SurfaceCommitMessage {
     pub view_id: u64,
     pub role: Option<&'static str>,
     pub texture_id: i64,
-    pub buffer_delta: Option<Point<i32, Logical>>,
     pub buffer_size: Option<Size<i32, BufferCoords>>,
     pub scale: i32,
     pub input_region: Option<RegionAttributes>,
