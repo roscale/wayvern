@@ -32,15 +32,15 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             state.states.set(xdg_toplevel::State::Activated);
         });
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "new_toplevel",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("new_toplevel", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-        ]))), None);
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
@@ -57,16 +57,16 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
 
         self.xdg_popups.insert(view_id, _surface.clone());
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "new_popup",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+                (EncodableValue::String("parent".to_string()), EncodableValue::Int64(parent_view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("new_popup", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-            (EncodableValue::String("parent".to_string()), EncodableValue::Int64(parent_view_id as i64)),
-        ]))), None);
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial) {
@@ -74,15 +74,15 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "interactive_move",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("interactive_move", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-        ]))), None);
     }
 
     fn resize_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial, edges: ResizeEdge) {
@@ -90,16 +90,16 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "interactive_resize",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+                (EncodableValue::String("edge".to_string()), EncodableValue::Int64(edges as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("interactive_resize", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-            (EncodableValue::String("edge".to_string()), EncodableValue::Int64(edges as i64)),
-        ]))), None);
     }
 
 
@@ -117,6 +117,4 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
         });
         self.xdg_toplevels.remove(&view_id);
     }
-
-
 }

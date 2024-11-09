@@ -1,21 +1,19 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::backends::Backend;
+use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
+use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
+use crate::server_state::{MySurfaceState, ServerState};
+use crate::ClientState;
 use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::delegate_compositor;
-use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Client;
 use smithay::utils::Rectangle;
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::{with_states, with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction};
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData};
-use crate::{ClientState};
-use crate::backends::Backend;
-use crate::flutter_engine::platform_channels::encodable_value::EncodableValue;
-use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
-use crate::flutter_engine::platform_channels::standard_method_codec::StandardMethodCodec;
-use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
-use crate::server_state::{MySurfaceState, ServerState};
+use std::cell::RefCell;
 
 delegate_compositor!(@<BackendData: Backend + 'static> ServerState<BackendData>);
 
@@ -38,15 +36,15 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         });
         self.surfaces.insert(view_id, surface.clone());
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "new_surface",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("new_surface", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-        ]))), None);
     }
 
     fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
@@ -58,16 +56,16 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "new_subsurface",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+                (EncodableValue::String("parent".to_string()), EncodableValue::Int64(parent_view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("new_subsurface", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-            (EncodableValue::String("parent".to_string()), EncodableValue::Int64(parent_view_id as i64)),
-        ]))), None);
     }
 
     fn commit(&mut self, surface: &WlSurface) {
@@ -224,13 +222,13 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
         let commit_message = commit_message.serialize();
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "commit_surface",
+            Some(Box::new(commit_message)),
+            None,
         );
-        method_channel.invoke_method("commit_surface", Some(Box::new(commit_message)), None);
     }
 
     fn destroyed(&mut self, _surface: &WlSurface) {
@@ -239,15 +237,15 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         });
         self.surfaces.remove(&view_id);
 
-        let codec = Rc::new(StandardMethodCodec::new());
-        let mut method_channel = MethodChannel::new(
-            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
-            "platform".to_string(),
-            codec,
+        self.flutter_engine_mut().invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "destroy_surface",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+            ]))),
+            None,
         );
-        method_channel.invoke_method("destroy_surface", Some(Box::new(EncodableValue::Map(vec![
-            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
-        ]))), None);
     }
 }
 

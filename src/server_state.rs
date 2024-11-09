@@ -15,6 +15,7 @@ use smithay::input::{Seat, SeatState};
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::channel::Channel;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Display;
@@ -135,159 +136,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
         let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
 
-        macro_rules! extract {
-            ($e:expr, $p:path) => {
-                match $e {
-                    $p(value) => value,
-                    _ => panic!("Failed to extract value"),
-                }
-            };
-        }
-
-        fn get_value<'a>(map: &'a EncodableValue, key: &str) -> &'a EncodableValue {
-            let map = extract!(map, EncodableValue::Map);
-            for (k, v) in map {
-                if let EncodableValue::String(k) = k {
-                    if k == key {
-                        return v;
-                    }
-                }
-            }
-            panic!("Key {} not found in map", key);
-        }
-
-        loop_handle
-            .insert_source(
-                rx_platform_message,
-                |event, (), data| {
-                    if let Msg((method_call, mut result)) = event {
-                        let pointer = data.state.pointer.clone();
-                        let now = Duration::from(data.state.clock.now()).as_millis() as u32;
-
-                        match method_call.method() {
-                            "pointer_hover" => {
-                                let args = method_call.arguments().unwrap();
-                                let view_id = get_value(args, "view_id").long_value().unwrap();
-                                let x = *extract!(get_value(args, "x"), EncodableValue::Double);
-                                let y = *extract!(get_value(args, "y"), EncodableValue::Double);
-
-                                data.state.view_id_under_cursor = Some(view_id as u64);
-
-                                if let Some(surface) = data.state.surfaces.get(&(view_id as u64)).cloned() {
-                                    pointer.motion(
-                                        &mut data.state,
-                                        Some((surface.clone(), (0.0, 0.0).into())),
-                                        &MotionEvent {
-                                            location: (x, y).into(),
-                                            serial: SERIAL_COUNTER.next_serial(),
-                                            time: now,
-                                        },
-                                    );
-                                    pointer.frame(&mut data.state);
-                                    result.success(None);
-                                } else {
-                                    result.error(
-                                        "surface_doesnt_exist".to_string(),
-                                        format!("Surface {view_id} doesn't exist"),
-                                        None,
-                                    );
-                                }
-                            }
-                            "pointer_exit" => {
-                                data.state.view_id_under_cursor = None;
-
-                                pointer.motion(
-                                    &mut data.state,
-                                    None,
-                                    &MotionEvent {
-                                        location: (0.0, 0.0).into(),
-                                        serial: SERIAL_COUNTER.next_serial(),
-                                        time: now,
-                                    },
-                                );
-                                result.success(None);
-                            }
-                            "mouse_button_event" => {
-                                let args = method_call.arguments().unwrap();
-                                let button = get_value(args, "button").long_value().unwrap();
-                                let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
-
-                                pointer.button(
-                                    &mut data.state,
-                                    &ButtonEvent {
-                                        serial: SERIAL_COUNTER.next_serial(),
-                                        time: now,
-                                        button: *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button as u32)).unwrap() as u32,
-                                        state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
-                                    },
-                                );
-                                pointer.frame(&mut data.state);
-                                result.success(None);
-                            }
-                            "activate_window" => {
-                                let args = method_call.arguments().unwrap();
-                                let args = extract!(args, EncodableValue::List);
-                                let view_id = args[0].long_value().unwrap();
-                                let activate = extract!(args[1], EncodableValue::Bool);
-
-                                let pointer = data.state.seat.get_pointer().unwrap();
-                                let keyboard = data.state.seat.get_keyboard().unwrap();
-
-                                let serial = SERIAL_COUNTER.next_serial();
-
-                                if !pointer.is_grabbed() {
-                                    let toplevel = data.state.xdg_toplevels.get(&(view_id as u64)).cloned();
-                                    if let Some(toplevel) = toplevel {
-                                        toplevel.with_pending_state(|state| {
-                                            if activate {
-                                                state.states.set(xdg_toplevel::State::Activated);
-                                            } else {
-                                                state.states.unset(xdg_toplevel::State::Activated);
-                                            }
-                                        });
-                                        keyboard.set_focus(&mut data.state, Some(toplevel.wl_surface().clone()), serial);
-
-                                        for toplevel in data.state.xdg_toplevels.values() {
-                                            toplevel.send_pending_configure();
-                                        }
-                                        result.success(None);
-                                    } else {
-                                        result.error(
-                                            "surface_doesnt_exist".to_string(),
-                                            format!("Surface {view_id} doesn't exist"),
-                                            None,
-                                        );
-                                    }
-                                }
-                            }
-                            "resize_window" => {
-                                let args = method_call.arguments().unwrap();
-                                let view_id = get_value(args, "view_id").long_value().unwrap();
-                                let width = get_value(args, "width").long_value().unwrap();
-                                let height = get_value(args, "height").long_value().unwrap();
-
-                                if let Some(surface) = data.state.xdg_toplevels.get(&(view_id as u64)).cloned() {
-                                    surface.with_pending_state(|state| {
-                                        state.size = Some((width as i32, height as i32).into());
-                                    });
-                                    surface.send_pending_configure();
-                                    result.success(None);
-                                } else {
-                                    result.error(
-                                        "surface_doesnt_exist".to_string(),
-                                        format!("Surface {view_id} doesn't exist"),
-                                        None,
-                                    );
-                                }
-                            }
-                            _ => {
-                                result.success(None);
-                            }
-                        }
-                    }
-                },
-            )
-            .expect("Failed to init wayland server source");
+        Self::register_platform_message_handler(&loop_handle, rx_platform_message);
 
         Self {
             running: Arc::new(AtomicBool::new(true)),
@@ -320,6 +169,189 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             texture_swapchains: HashMap::new(),
             tx_platform_message: Some(tx_platform_message),
         }
+    }
+
+    fn register_platform_message_handler(
+        loop_handle: &LoopHandle<'static, CalloopData<BackendData>>,
+        rx_platform_message: Channel<(MethodCall, Box<dyn MethodResult>)>,
+    ) {
+        macro_rules! extract {
+            ($e:expr, $p:path) => {
+                match $e {
+                    $p(value) => value,
+                    _ => panic!("Failed to extract value"),
+                }
+            };
+        }
+
+        fn get_value<'a>(map: &'a EncodableValue, key: &str) -> &'a EncodableValue {
+            let map = extract!(map, EncodableValue::Map);
+            for (k, v) in map {
+                if let EncodableValue::String(k) = k {
+                    if k == key {
+                        return v;
+                    }
+                }
+            }
+            panic!("Key {} not found in map", key);
+        }
+
+        loop_handle
+            .insert_source(
+                rx_platform_message,
+                |event, (), data| {
+                    let Msg((method_call, mut result)) = event else {
+                        return;
+                    };
+
+                    match method_call.method() {
+                        "pointer_hover" => {
+                            let args = method_call.arguments().unwrap();
+                            let view_id = get_value(args, "view_id").long_value().unwrap() as u64;
+                            let x = *extract!(get_value(args, "x"), EncodableValue::Double);
+                            let y = *extract!(get_value(args, "y"), EncodableValue::Double);
+
+                            data.state.pointer_hover(view_id, x, y);
+
+                            result.success(None);
+                        }
+                        "pointer_exit" => {
+                            data.state.pointer_exit();
+
+                            result.success(None);
+                        }
+                        "mouse_button_event" => {
+                            let args = method_call.arguments().unwrap();
+                            let button = get_value(args, "button").long_value().unwrap() as u32;
+                            let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
+
+                            data.state.mouse_button_event(
+                                *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
+                                is_pressed,
+                            );
+
+                            result.success(None);
+                        }
+                        "activate_window" => {
+                            let args = method_call.arguments().unwrap();
+                            let args = extract!(args, EncodableValue::List);
+                            let view_id = args[0].long_value().unwrap() as u64;
+                            let activate = extract!(args[1], EncodableValue::Bool);
+
+                            data.state.activate_window(view_id, activate);
+
+                            result.success(None);
+                        }
+                        "resize_window" => {
+                            let args = method_call.arguments().unwrap();
+                            let view_id = get_value(args, "view_id").long_value().unwrap() as u64;
+                            let width = get_value(args, "width").long_value().unwrap() as i32;
+                            let height = get_value(args, "height").long_value().unwrap() as i32;
+
+                            data.state.resize_window(view_id, width, height);
+
+                            result.success(None);
+                        }
+                        _ => {
+                            result.success(None);
+                        }
+                    }
+                },
+            )
+            .expect("Failed to init wayland server source");
+    }
+
+    fn pointer_hover(&mut self, view_id: u64, x: f64, y: f64) {
+        let pointer = self.pointer.clone();
+
+        self.view_id_under_cursor = Some(view_id);
+
+        let Some(surface) = self.surfaces.get(&view_id).cloned() else {
+            return;
+        };
+
+        pointer.motion(
+            self,
+            Some((surface.clone(), (0.0, 0.0).into())),
+            &MotionEvent {
+                location: (x, y).into(),
+                serial: SERIAL_COUNTER.next_serial(),
+                time: Duration::from(self.clock.now()).as_millis() as u32,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    fn pointer_exit(&mut self) {
+        let pointer = self.pointer.clone();
+
+        self.view_id_under_cursor = None;
+
+        pointer.motion(
+            self,
+            None,
+            &MotionEvent {
+                location: (0.0, 0.0).into(),
+                serial: SERIAL_COUNTER.next_serial(),
+                time: Duration::from(self.clock.now()).as_millis() as u32,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    fn mouse_button_event(&mut self, button: u32, is_pressed: bool) {
+        let pointer = self.pointer.clone();
+        let now = Duration::from(self.clock.now()).as_millis() as u32;
+
+        pointer.button(
+            self,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: now,
+                button,
+                state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
+            },
+        );
+        pointer.frame(self);
+    }
+
+    fn activate_window(&mut self, view_id: u64, activate: bool) {
+        let pointer = self.seat.get_pointer().unwrap();
+        let keyboard = self.seat.get_keyboard().unwrap();
+
+        let serial = SERIAL_COUNTER.next_serial();
+
+        if pointer.is_grabbed() {
+            return;
+        }
+
+        let Some(toplevel) = self.xdg_toplevels.get(&view_id).cloned() else {
+            return;
+        };
+
+        toplevel.with_pending_state(|state| {
+            if activate {
+                state.states.set(xdg_toplevel::State::Activated);
+            } else {
+                state.states.unset(xdg_toplevel::State::Activated);
+            }
+        });
+        keyboard.set_focus(self, Some(toplevel.wl_surface().clone()), serial);
+
+        for toplevel in self.xdg_toplevels.values() {
+            toplevel.send_pending_configure();
+        }
+    }
+
+    fn resize_window(&mut self, view_id: u64, width: i32, height: i32) {
+        let Some(surface) = self.xdg_toplevels.get(&view_id).cloned() else {
+            return;
+        };
+
+        surface.with_pending_state(|state| {
+            state.size = Some((width, height).into());
+        });
+        surface.send_pending_configure();
     }
 }
 

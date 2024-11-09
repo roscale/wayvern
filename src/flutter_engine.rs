@@ -3,6 +3,7 @@ use std::mem::size_of;
 use std::ops::{Deref, DerefMut};
 use std::os::unix::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
+use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::{
@@ -50,6 +51,9 @@ use crate::backends::Backend;
 use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
 use crate::flutter_engine::embedder::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
 use crate::flutter_engine::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+use crate::flutter_engine::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine::platform_channels::method_codec::MethodCodec;
+use crate::flutter_engine::platform_channels::method_result::MethodResult;
 use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 use crate::mouse_button_tracker::MouseButtonTracker;
@@ -306,6 +310,23 @@ impl FlutterEngine {
             return Err(format!("Could not mark external texture frame available, error {result}").into());
         }
         Ok(())
+    }
+
+    pub fn invoke_method<T: 'static, C: MethodCodec<T> + 'static>(
+        &mut self,
+        codec: C,
+        channel_name: &str,
+        method: &str,
+        arguments: Option<Box<T>>,
+        result: Option<Box<dyn MethodResult<T>>>,
+    ) {
+        let codec = Rc::new(codec);
+        let mut method_channel = MethodChannel::new(
+            self.binary_messenger.as_mut().unwrap(),
+            channel_name.to_string(),
+            codec,
+        );
+        method_channel.invoke_method(method, arguments, result);
     }
 }
 
