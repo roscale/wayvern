@@ -171,6 +171,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         }
     }
 
+    fn now_ms(&self) -> u32 {
+        Duration::from(self.clock.now()).as_millis() as u32
+    }
+
     fn register_platform_message_handler(
         loop_handle: &LoopHandle<'static, CalloopData<BackendData>>,
         rx_platform_message: Channel<(MethodCall, Box<dyn MethodResult>)>,
@@ -276,7 +280,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             &MotionEvent {
                 location: (x, y).into(),
                 serial: SERIAL_COUNTER.next_serial(),
-                time: Duration::from(self.clock.now()).as_millis() as u32,
+                time: self.now_ms(),
             },
         );
         pointer.frame(self);
@@ -293,7 +297,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             &MotionEvent {
                 location: (0.0, 0.0).into(),
                 serial: SERIAL_COUNTER.next_serial(),
-                time: Duration::from(self.clock.now()).as_millis() as u32,
+                time: self.now_ms(),
             },
         );
         pointer.frame(self);
@@ -301,13 +305,12 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
     fn mouse_button_event(&mut self, button: u32, is_pressed: bool) {
         let pointer = self.pointer.clone();
-        let now = Duration::from(self.clock.now()).as_millis() as u32;
 
         pointer.button(
             self,
             &ButtonEvent {
                 serial: SERIAL_COUNTER.next_serial(),
-                time: now,
+                time: self.now_ms(),
                 button,
                 state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
             },
