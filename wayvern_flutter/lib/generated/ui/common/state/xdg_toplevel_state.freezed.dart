@@ -12,7 +12,7 @@ part of '../../../../ui/common/state/xdg_toplevel_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$XdgToplevelState {
@@ -27,7 +27,9 @@ mixin _$XdgToplevelState {
   String get appId => throw _privateConstructorUsedError;
   Tiling? get tilingRequested => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgToplevelState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $XdgToplevelStateCopyWith<XdgToplevelState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -60,6 +62,8 @@ class _$XdgToplevelStateCopyWithImpl<$Res, $Val extends XdgToplevelState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of XdgToplevelState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -141,6 +145,8 @@ class __$$XdgToplevelStateImplCopyWithImpl<$Res>
       $Res Function(_$XdgToplevelStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of XdgToplevelState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -233,7 +239,7 @@ class _$XdgToplevelStateImpl implements _XdgToplevelState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$XdgToplevelStateImpl &&
@@ -269,7 +275,9 @@ class _$XdgToplevelStateImpl implements _XdgToplevelState {
       appId,
       tilingRequested);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgToplevelState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$XdgToplevelStateImplCopyWith<_$XdgToplevelStateImpl> get copyWith =>
@@ -307,8 +315,11 @@ abstract class _XdgToplevelState implements XdgToplevelState {
   String get appId;
   @override
   Tiling? get tilingRequested;
+
+  /// Create a copy of XdgToplevelState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$XdgToplevelStateImplCopyWith<_$XdgToplevelStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

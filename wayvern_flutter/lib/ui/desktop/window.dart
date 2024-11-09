@@ -4,10 +4,9 @@ import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:zenith/ui/common/state/surface_state.dart';
-import 'package:zenith/ui/common/state/xdg_surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
+import 'package:zenith/ui/common/xdg_toplevel_surface.dart';
 import 'package:zenith/ui/desktop/decorations/server_side_decorations.dart';
 import 'package:zenith/ui/desktop/decorations/with_decorations.dart';
 import 'package:zenith/ui/desktop/interactive_move_and_resize_listener.dart';
@@ -17,20 +16,8 @@ import 'package:zenith/ui/desktop/state/window_position_provider.dart';
 import 'package:zenith/ui/desktop/state/window_resize_provider.dart';
 import 'package:zenith/ui/desktop/state/window_stack_provider.dart';
 import 'package:zenith/ui/desktop/state/window_state_provider.dart';
-import 'package:zenith/ui/mobile/state/virtual_keyboard_state.dart';
-import 'package:zenith/util/rect_overflow_box.dart';
-
-part '../../generated/ui/desktop/window.g.dart';
 
 const duration = Duration(milliseconds: 300);
-
-@Riverpod(keepAlive: true)
-Window windowWidget(WindowWidgetRef ref, int viewId) {
-  return Window(
-    key: GlobalKey(),
-    viewId: viewId,
-  );
-}
 
 class Window extends ConsumerStatefulWidget {
   final int viewId;
@@ -44,7 +31,8 @@ class Window extends ConsumerStatefulWidget {
   ConsumerState<Window> createState() => _WindowState();
 }
 
-class _WindowState extends ConsumerState<Window> with SingleTickerProviderStateMixin {
+class _WindowState extends ConsumerState<Window>
+    with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
@@ -54,59 +42,76 @@ class _WindowState extends ConsumerState<Window> with SingleTickerProviderStateM
   void spawnWindowAtCursor() {
     Future.microtask(() {
       Offset center = ref.read(cursorPositionProvider);
-      Size visibleBounds = ref.read(xdgSurfaceStatesProvider(widget.viewId)).visibleBounds.size;
+      Size visibleBounds = ref
+          .read(waylandProviderProvider)
+          .xdgSurfaces[widget.viewId]!
+          .visibleBounds
+          .size;
       Rect windowRect = Rect.fromCenter(
         center: center,
         width: visibleBounds.width,
         height: visibleBounds.height,
       );
 
-      Size desktopSize = ref.read(windowStackProvider).desktopSize;// Offset windowPosition = ref.read(windowPositionProvider(widget.viewId));
+      Size desktopSize = ref
+          .read(windowStackProvider)
+          .desktopSize; // Offset windowPosition = ref.read(windowPositionProvider(widget.viewId));
       Rect desktopRect = Offset.zero & desktopSize;
 
-      double dx = windowRect.right.clamp(desktopRect.left, desktopRect.right) - windowRect.right;
-      double dy = windowRect.bottom.clamp(desktopRect.top, desktopRect.bottom) - windowRect.bottom;
+      double dx = windowRect.right.clamp(desktopRect.left, desktopRect.right) -
+          windowRect.right;
+      double dy = windowRect.bottom.clamp(desktopRect.top, desktopRect.bottom) -
+          windowRect.bottom;
       windowRect = windowRect.translate(dx, dy);
 
-      dx = windowRect.left.clamp(desktopRect.left, desktopRect.right) - windowRect.left;
-      dy = windowRect.top.clamp(desktopRect.top, desktopRect.bottom) - windowRect.top;
+      dx = windowRect.left.clamp(desktopRect.left, desktopRect.right) -
+          windowRect.left;
+      dy = windowRect.top.clamp(desktopRect.top, desktopRect.bottom) -
+          windowRect.top;
       windowRect = windowRect.translate(dx, dy);
 
-      ref.read(windowPositionProvider(widget.viewId).notifier).state = windowRect.topLeft;
+      ref.read(windowPositionProvider(widget.viewId).notifier).state =
+          windowRect.topLeft;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(xdgSurfaceStatesProvider(widget.viewId).select((v) => v.visibleBounds), (Rect? previous, Rect next) {
+    ref.listen(
+        waylandProviderProvider
+            .select((v) => v.xdgSurfaces[widget.viewId]!.visibleBounds),
+        (Rect? previous, Rect next) {
       if (previous != null) {
-        Offset offset =
-            ref.read(windowResizeProvider(widget.viewId).notifier).computeWindowOffset(previous.size, next.size);
-        ref.read(windowPositionProvider(widget.viewId).notifier).update((state) => state + offset);
+        Offset offset = ref
+            .read(windowResizeProvider(widget.viewId).notifier)
+            .computeWindowOffset(previous.size, next.size);
+        ref
+            .read(windowPositionProvider(widget.viewId).notifier)
+            .update((state) => state + offset);
       }
     });
 
-    ref.listen(windowMoveProvider(widget.viewId).select((v) => v.movedPosition), (_, Offset position) {
+    ref.listen(windowMoveProvider(widget.viewId).select((v) => v.movedPosition),
+        (_, Offset position) {
       ref.read(windowPositionProvider(widget.viewId).notifier).state = position;
     });
-
-    // Initialize the provider because it listens to events from other providers.
-    ref.read(virtualKeyboardStateNotifierProvider(widget.viewId));
 
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? child) {
         final position = ref.watch(windowPositionProvider(widget.viewId));
-        final decoration = ref.watch(xdgToplevelStatesProvider(widget.viewId).select((v) => v.decoration));
+        final decoration = ref.watch(waylandProviderProvider
+            .select((v) => v.xdgToplevels[widget.viewId]!.decoration));
         var offset = Offset.zero;
         switch (decoration) {
           case ToplevelDecoration.none:
           case ToplevelDecoration.clientSide:
-            final visibleBounds =
-                ref.watch(xdgSurfaceStatesProvider(widget.viewId).select((value) => value.visibleBounds));
+            final visibleBounds = ref.watch(waylandProviderProvider
+                .select((v) => v.xdgSurfaces[widget.viewId]!.visibleBounds));
             offset = visibleBounds.topLeft;
             break;
           case ToplevelDecoration.serverSide:
-            offset = const Offset(ServerSideDecorations.borderWidth, ServerSideDecorations.borderWidth);
+            offset = const Offset(ServerSideDecorations.borderWidth,
+                ServerSideDecorations.borderWidth);
             break;
         }
 
@@ -119,12 +124,15 @@ class _WindowState extends ConsumerState<Window> with SingleTickerProviderStateM
       child: _OpenCloseAnimations(
         viewId: widget.viewId,
         child: RepaintBoundary(
-          key: ref.watch(windowStateProvider(widget.viewId).select((value) => value.repaintBoundaryKey)),
+          key: ref.watch(windowStateProvider(widget.viewId)
+              .select((value) => value.repaintBoundaryKey)),
           child: WithDecorations(
             viewId: widget.viewId,
             child: InteractiveMoveAndResizeListener(
               viewId: widget.viewId,
-              child: ref.watch(xdgToplevelSurfaceWidgetProvider(widget.viewId)),
+              child: XdgToplevelSurface(
+                viewId: widget.viewId,
+              ),
             ),
           ),
         ),
@@ -143,7 +151,8 @@ class _OpenCloseAnimations extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_OpenCloseAnimations> createState() => _OpenCloseAnimationsState();
+  ConsumerState<_OpenCloseAnimations> createState() =>
+      _OpenCloseAnimationsState();
 }
 
 class _OpenCloseAnimationsState extends ConsumerState<_OpenCloseAnimations> {
@@ -151,7 +160,8 @@ class _OpenCloseAnimationsState extends ConsumerState<_OpenCloseAnimations> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(windowStackProvider.select((v) => v.animateClosing), (ISet<int>? previous, ISet<int> next) async {
+    ref.listen(windowStackProvider.select((v) => v.animateClosing),
+        (ISet<int>? previous, ISet<int> next) async {
       previous ??= ISet();
       if (!previous.contains(widget.viewId) && next.contains(widget.viewId)) {
         setState(() {
@@ -163,7 +173,9 @@ class _OpenCloseAnimationsState extends ConsumerState<_OpenCloseAnimations> {
     return Consumer(
       builder: (context, ref, child) {
         return IgnorePointer(
-          ignoring: ref.watch(windowStackProvider.select((v) => v.animateClosing)).contains(widget.viewId),
+          ignoring: ref
+              .watch(windowStackProvider.select((v) => v.animateClosing))
+              .contains(widget.viewId),
           child: child!,
         );
       },
@@ -214,7 +226,8 @@ class _TilingAnimations extends ConsumerStatefulWidget {
   ConsumerState<_TilingAnimations> createState() => _TilingAnimationsState();
 }
 
-class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with SingleTickerProviderStateMixin {
+class _TilingAnimationsState extends ConsumerState<_TilingAnimations>
+    with SingleTickerProviderStateMixin {
   late Size oldSurfaceSize;
 
   // late AnimationController controller = AnimationController(
@@ -249,9 +262,12 @@ class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with Singl
   Widget build(BuildContext context) {
     final int viewId = widget.viewId;
 
-    Size surfaceSize = ref.watch(surfaceStatesProvider(viewId).select((v) => v.surfaceSize));
+    Size surfaceSize = ref.watch(
+        waylandProviderProvider.select((v) => v.surfaces[viewId]!.surfaceSize));
 
-    ref.listen(surfaceStatesProvider(viewId).select((v) => v.surfaceSize), (previous, next) {
+    ref.listen(
+        waylandProviderProvider.select((v) => v.surfaces[viewId]!.surfaceSize),
+        (previous, next) {
       oldSurfaceSize = previous ?? next;
     });
 
@@ -266,7 +282,10 @@ class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with Singl
     //     ..forward();
     // });
 
-    ref.listen(xdgToplevelStatesProvider(viewId).select((value) => value.tilingRequested), (previous, next) async {
+    ref.listen(
+        waylandProviderProvider
+            .select((value) => value.xdgToplevels[viewId]!.tilingRequested),
+        (previous, next) async {
       if (previous == next) {
         return;
       }
@@ -274,11 +293,14 @@ class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with Singl
       if (next == Tiling.maximized) {
         ref.read(windowPositionProvider(viewId).notifier).state = Offset.zero;
       } else {
-        ref.read(windowPositionProvider(viewId).notifier).state = const Offset(500, 500);
+        ref.read(windowPositionProvider(viewId).notifier).state =
+            const Offset(500, 500);
       }
 
-      final renderObjectKey = ref.read(windowStateProvider(viewId)).repaintBoundaryKey;
-      RenderRepaintBoundary? boundary = renderObjectKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final renderObjectKey =
+          ref.read(windowStateProvider(viewId)).repaintBoundaryKey;
+      RenderRepaintBoundary? boundary = renderObjectKey.currentContext
+          ?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) {
         return;
       }
@@ -336,7 +358,10 @@ class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with Singl
         ),
         TweenAnimationBuilder(
           key: ValueKey(snapshot),
-          tween: SizeTween(begin: Size(snapshot.width.toDouble(), snapshot.height.toDouble()), end: surfaceSize),
+          tween: SizeTween(
+              begin:
+                  Size(snapshot.width.toDouble(), snapshot.height.toDouble()),
+              end: surfaceSize),
           duration: duration,
           curve: Curves.easeInOutCubic,
           builder: (context, value, child) {
@@ -363,7 +388,9 @@ class _TilingAnimationsState extends ConsumerState<_TilingAnimations> with Singl
               ),
             ),
             onEnd: () {
-              ref.read(windowStateProvider(widget.viewId).notifier).setSnapshot(null);
+              ref
+                  .read(windowStateProvider(widget.viewId).notifier)
+                  .setSnapshot(null);
             },
           ),
         ),

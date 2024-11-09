@@ -12,10 +12,11 @@ part of '../../../../ui/common/state/surface_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$SurfaceState {
+  bool get soonDestroyed => throw _privateConstructorUsedError;
   SurfaceRole get role => throw _privateConstructorUsedError;
   int get viewId => throw _privateConstructorUsedError;
   TextureId get textureId => throw _privateConstructorUsedError;
@@ -23,15 +24,15 @@ mixin _$SurfaceState {
   Offset get surfacePosition => throw _privateConstructorUsedError;
   Size get surfaceSize => throw _privateConstructorUsedError;
   double get scale => throw _privateConstructorUsedError;
-  GlobalKey<State<StatefulWidget>> get widgetKey =>
-      throw _privateConstructorUsedError;
   GlobalKey<State<StatefulWidget>> get textureKey =>
       throw _privateConstructorUsedError;
-  List<int> get subsurfacesBelow => throw _privateConstructorUsedError;
-  List<int> get subsurfacesAbove => throw _privateConstructorUsedError;
+  IList<int> get subsurfacesBelow => throw _privateConstructorUsedError;
+  IList<int> get subsurfacesAbove => throw _privateConstructorUsedError;
   Rect get inputRegion => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of SurfaceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $SurfaceStateCopyWith<SurfaceState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -43,17 +44,17 @@ abstract class $SurfaceStateCopyWith<$Res> {
       _$SurfaceStateCopyWithImpl<$Res, SurfaceState>;
   @useResult
   $Res call(
-      {SurfaceRole role,
+      {bool soonDestroyed,
+      SurfaceRole role,
       int viewId,
       TextureId textureId,
       TextureId oldTextureId,
       Offset surfacePosition,
       Size surfaceSize,
       double scale,
-      GlobalKey<State<StatefulWidget>> widgetKey,
       GlobalKey<State<StatefulWidget>> textureKey,
-      List<int> subsurfacesBelow,
-      List<int> subsurfacesAbove,
+      IList<int> subsurfacesBelow,
+      IList<int> subsurfacesAbove,
       Rect inputRegion});
 }
 
@@ -67,9 +68,12 @@ class _$SurfaceStateCopyWithImpl<$Res, $Val extends SurfaceState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of SurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? soonDestroyed = null,
     Object? role = null,
     Object? viewId = null,
     Object? textureId = null,
@@ -77,13 +81,16 @@ class _$SurfaceStateCopyWithImpl<$Res, $Val extends SurfaceState>
     Object? surfacePosition = null,
     Object? surfaceSize = null,
     Object? scale = null,
-    Object? widgetKey = null,
     Object? textureKey = null,
     Object? subsurfacesBelow = null,
     Object? subsurfacesAbove = null,
     Object? inputRegion = null,
   }) {
     return _then(_value.copyWith(
+      soonDestroyed: null == soonDestroyed
+          ? _value.soonDestroyed
+          : soonDestroyed // ignore: cast_nullable_to_non_nullable
+              as bool,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
@@ -112,10 +119,6 @@ class _$SurfaceStateCopyWithImpl<$Res, $Val extends SurfaceState>
           ? _value.scale
           : scale // ignore: cast_nullable_to_non_nullable
               as double,
-      widgetKey: null == widgetKey
-          ? _value.widgetKey
-          : widgetKey // ignore: cast_nullable_to_non_nullable
-              as GlobalKey<State<StatefulWidget>>,
       textureKey: null == textureKey
           ? _value.textureKey
           : textureKey // ignore: cast_nullable_to_non_nullable
@@ -123,11 +126,11 @@ class _$SurfaceStateCopyWithImpl<$Res, $Val extends SurfaceState>
       subsurfacesBelow: null == subsurfacesBelow
           ? _value.subsurfacesBelow
           : subsurfacesBelow // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
       subsurfacesAbove: null == subsurfacesAbove
           ? _value.subsurfacesAbove
           : subsurfacesAbove // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
       inputRegion: null == inputRegion
           ? _value.inputRegion
           : inputRegion // ignore: cast_nullable_to_non_nullable
@@ -145,17 +148,17 @@ abstract class _$$SurfaceStateImplCopyWith<$Res>
   @override
   @useResult
   $Res call(
-      {SurfaceRole role,
+      {bool soonDestroyed,
+      SurfaceRole role,
       int viewId,
       TextureId textureId,
       TextureId oldTextureId,
       Offset surfacePosition,
       Size surfaceSize,
       double scale,
-      GlobalKey<State<StatefulWidget>> widgetKey,
       GlobalKey<State<StatefulWidget>> textureKey,
-      List<int> subsurfacesBelow,
-      List<int> subsurfacesAbove,
+      IList<int> subsurfacesBelow,
+      IList<int> subsurfacesAbove,
       Rect inputRegion});
 }
 
@@ -167,9 +170,12 @@ class __$$SurfaceStateImplCopyWithImpl<$Res>
       _$SurfaceStateImpl _value, $Res Function(_$SurfaceStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of SurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? soonDestroyed = null,
     Object? role = null,
     Object? viewId = null,
     Object? textureId = null,
@@ -177,13 +183,16 @@ class __$$SurfaceStateImplCopyWithImpl<$Res>
     Object? surfacePosition = null,
     Object? surfaceSize = null,
     Object? scale = null,
-    Object? widgetKey = null,
     Object? textureKey = null,
     Object? subsurfacesBelow = null,
     Object? subsurfacesAbove = null,
     Object? inputRegion = null,
   }) {
     return _then(_$SurfaceStateImpl(
+      soonDestroyed: null == soonDestroyed
+          ? _value.soonDestroyed
+          : soonDestroyed // ignore: cast_nullable_to_non_nullable
+              as bool,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
@@ -212,22 +221,18 @@ class __$$SurfaceStateImplCopyWithImpl<$Res>
           ? _value.scale
           : scale // ignore: cast_nullable_to_non_nullable
               as double,
-      widgetKey: null == widgetKey
-          ? _value.widgetKey
-          : widgetKey // ignore: cast_nullable_to_non_nullable
-              as GlobalKey<State<StatefulWidget>>,
       textureKey: null == textureKey
           ? _value.textureKey
           : textureKey // ignore: cast_nullable_to_non_nullable
               as GlobalKey<State<StatefulWidget>>,
       subsurfacesBelow: null == subsurfacesBelow
-          ? _value._subsurfacesBelow
+          ? _value.subsurfacesBelow
           : subsurfacesBelow // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
       subsurfacesAbove: null == subsurfacesAbove
-          ? _value._subsurfacesAbove
+          ? _value.subsurfacesAbove
           : subsurfacesAbove // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
       inputRegion: null == inputRegion
           ? _value.inputRegion
           : inputRegion // ignore: cast_nullable_to_non_nullable
@@ -240,21 +245,21 @@ class __$$SurfaceStateImplCopyWithImpl<$Res>
 
 class _$SurfaceStateImpl implements _SurfaceState {
   const _$SurfaceStateImpl(
-      {required this.role,
+      {required this.soonDestroyed,
+      required this.role,
       required this.viewId,
       required this.textureId,
       required this.oldTextureId,
       required this.surfacePosition,
       required this.surfaceSize,
       required this.scale,
-      required this.widgetKey,
       required this.textureKey,
-      required final List<int> subsurfacesBelow,
-      required final List<int> subsurfacesAbove,
-      required this.inputRegion})
-      : _subsurfacesBelow = subsurfacesBelow,
-        _subsurfacesAbove = subsurfacesAbove;
+      required this.subsurfacesBelow,
+      required this.subsurfacesAbove,
+      required this.inputRegion});
 
+  @override
+  final bool soonDestroyed;
   @override
   final SurfaceRole role;
   @override
@@ -270,40 +275,26 @@ class _$SurfaceStateImpl implements _SurfaceState {
   @override
   final double scale;
   @override
-  final GlobalKey<State<StatefulWidget>> widgetKey;
-  @override
   final GlobalKey<State<StatefulWidget>> textureKey;
-  final List<int> _subsurfacesBelow;
   @override
-  List<int> get subsurfacesBelow {
-    if (_subsurfacesBelow is EqualUnmodifiableListView)
-      return _subsurfacesBelow;
-    // ignore: implicit_dynamic_type
-    return EqualUnmodifiableListView(_subsurfacesBelow);
-  }
-
-  final List<int> _subsurfacesAbove;
+  final IList<int> subsurfacesBelow;
   @override
-  List<int> get subsurfacesAbove {
-    if (_subsurfacesAbove is EqualUnmodifiableListView)
-      return _subsurfacesAbove;
-    // ignore: implicit_dynamic_type
-    return EqualUnmodifiableListView(_subsurfacesAbove);
-  }
-
+  final IList<int> subsurfacesAbove;
   @override
   final Rect inputRegion;
 
   @override
   String toString() {
-    return 'SurfaceState(role: $role, viewId: $viewId, textureId: $textureId, oldTextureId: $oldTextureId, surfacePosition: $surfacePosition, surfaceSize: $surfaceSize, scale: $scale, widgetKey: $widgetKey, textureKey: $textureKey, subsurfacesBelow: $subsurfacesBelow, subsurfacesAbove: $subsurfacesAbove, inputRegion: $inputRegion)';
+    return 'SurfaceState(soonDestroyed: $soonDestroyed, role: $role, viewId: $viewId, textureId: $textureId, oldTextureId: $oldTextureId, surfacePosition: $surfacePosition, surfaceSize: $surfaceSize, scale: $scale, textureKey: $textureKey, subsurfacesBelow: $subsurfacesBelow, subsurfacesAbove: $subsurfacesAbove, inputRegion: $inputRegion)';
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SurfaceStateImpl &&
+            (identical(other.soonDestroyed, soonDestroyed) ||
+                other.soonDestroyed == soonDestroyed) &&
             (identical(other.role, role) || other.role == role) &&
             (identical(other.viewId, viewId) || other.viewId == viewId) &&
             (identical(other.textureId, textureId) ||
@@ -315,14 +306,12 @@ class _$SurfaceStateImpl implements _SurfaceState {
             (identical(other.surfaceSize, surfaceSize) ||
                 other.surfaceSize == surfaceSize) &&
             (identical(other.scale, scale) || other.scale == scale) &&
-            (identical(other.widgetKey, widgetKey) ||
-                other.widgetKey == widgetKey) &&
             (identical(other.textureKey, textureKey) ||
                 other.textureKey == textureKey) &&
             const DeepCollectionEquality()
-                .equals(other._subsurfacesBelow, _subsurfacesBelow) &&
+                .equals(other.subsurfacesBelow, subsurfacesBelow) &&
             const DeepCollectionEquality()
-                .equals(other._subsurfacesAbove, _subsurfacesAbove) &&
+                .equals(other.subsurfacesAbove, subsurfacesAbove) &&
             (identical(other.inputRegion, inputRegion) ||
                 other.inputRegion == inputRegion));
   }
@@ -330,6 +319,7 @@ class _$SurfaceStateImpl implements _SurfaceState {
   @override
   int get hashCode => Object.hash(
       runtimeType,
+      soonDestroyed,
       role,
       viewId,
       textureId,
@@ -337,13 +327,14 @@ class _$SurfaceStateImpl implements _SurfaceState {
       surfacePosition,
       surfaceSize,
       scale,
-      widgetKey,
       textureKey,
-      const DeepCollectionEquality().hash(_subsurfacesBelow),
-      const DeepCollectionEquality().hash(_subsurfacesAbove),
+      const DeepCollectionEquality().hash(subsurfacesBelow),
+      const DeepCollectionEquality().hash(subsurfacesAbove),
       inputRegion);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of SurfaceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$SurfaceStateImplCopyWith<_$SurfaceStateImpl> get copyWith =>
@@ -352,19 +343,21 @@ class _$SurfaceStateImpl implements _SurfaceState {
 
 abstract class _SurfaceState implements SurfaceState {
   const factory _SurfaceState(
-      {required final SurfaceRole role,
+      {required final bool soonDestroyed,
+      required final SurfaceRole role,
       required final int viewId,
       required final TextureId textureId,
       required final TextureId oldTextureId,
       required final Offset surfacePosition,
       required final Size surfaceSize,
       required final double scale,
-      required final GlobalKey<State<StatefulWidget>> widgetKey,
       required final GlobalKey<State<StatefulWidget>> textureKey,
-      required final List<int> subsurfacesBelow,
-      required final List<int> subsurfacesAbove,
+      required final IList<int> subsurfacesBelow,
+      required final IList<int> subsurfacesAbove,
       required final Rect inputRegion}) = _$SurfaceStateImpl;
 
+  @override
+  bool get soonDestroyed;
   @override
   SurfaceRole get role;
   @override
@@ -380,17 +373,18 @@ abstract class _SurfaceState implements SurfaceState {
   @override
   double get scale;
   @override
-  GlobalKey<State<StatefulWidget>> get widgetKey;
-  @override
   GlobalKey<State<StatefulWidget>> get textureKey;
   @override
-  List<int> get subsurfacesBelow;
+  IList<int> get subsurfacesBelow;
   @override
-  List<int> get subsurfacesAbove;
+  IList<int> get subsurfacesAbove;
   @override
   Rect get inputRegion;
+
+  /// Create a copy of SurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$SurfaceStateImplCopyWith<_$SurfaceStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

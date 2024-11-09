@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/popup_stack.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_popup_state.dart';
 import 'package:zenith/ui/common/state/xdg_surface_state.dart';
+import 'package:zenith/ui/common/surface.dart';
 
 class Popup extends StatelessWidget {
   final int viewId;
@@ -19,17 +21,16 @@ class Popup extends StatelessWidget {
       viewId: viewId,
       child: Consumer(
         builder: (BuildContext context, WidgetRef ref, Widget? child) {
-          Key key = ref.watch(xdgPopupStatesProvider(viewId).select((v) => v.animationsKey));
+          Key key = ref.watch(waylandProviderProvider
+              .select((v) => v.xdgPopups[viewId]!.animationsKey));
           return _Animations(
             key: key,
             viewId: viewId,
             child: child!,
           );
         },
-        child: Consumer(
-          builder: (_, WidgetRef ref, __) {
-            return ref.watch(surfaceWidgetProvider(viewId));
-          },
+        child: Surface(
+          viewId: viewId,
         ),
       ),
     );
@@ -50,18 +51,25 @@ class _Positioner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Consumer(
       builder: (_, WidgetRef ref, Widget? child) {
-        Offset position = ref.watch(xdgPopupStatesProvider(viewId).select((v) => v.position));
-        Rect visibleBounds = ref.watch(xdgSurfaceStatesProvider(viewId).select((v) => v.visibleBounds));
-        int parentId = ref.watch(xdgPopupStatesProvider(viewId).select((v) => v.parentViewId));
+        Offset position = ref.watch(waylandProviderProvider
+            .select((v) => v.xdgPopups[viewId]!.position));
+        Rect visibleBounds = ref.watch(waylandProviderProvider
+            .select((v) => v.xdgSurfaces[viewId]!.visibleBounds));
+        int parentId = ref.watch(waylandProviderProvider
+            .select((v) => v.xdgPopups[viewId]!.parentViewId));
         // FIXME: cannot use watch because the popup thinks the window is at 0,0 when these bounds change.
-        Rect parentVisibleBounds = ref.read(xdgSurfaceStatesProvider(parentId).select((v) => v.visibleBounds));
+        Rect parentVisibleBounds = ref.read(waylandProviderProvider
+            .select((v) => v.xdgSurfaces[parentId]!.visibleBounds));
 
         RenderBox? parentRenderBox = ref
-            .watch(surfaceStatesProvider(parentId).select((v) => v.textureKey))
+            .watch(waylandProviderProvider
+                .select((v) => v.surfaces[parentId]!.textureKey))
             .currentContext
             ?.findRenderObject() as RenderBox?;
-        RenderBox? popupStackRenderBox =
-            ref.watch(popupStackGlobalKeyProvider).currentContext?.findRenderObject() as RenderBox?;
+        RenderBox? popupStackRenderBox = ref
+            .watch(popupStackGlobalKeyProvider)
+            .currentContext
+            ?.findRenderObject() as RenderBox?;
 
         Offset offset;
         if (parentRenderBox != null &&
@@ -82,7 +90,8 @@ class _Positioner extends ConsumerWidget {
       },
       child: Consumer(
         builder: (_, WidgetRef ref, Widget? child) {
-          bool isClosing = ref.watch(xdgPopupStatesProvider(viewId).select((v) => v.isClosing));
+          bool isClosing = ref.watch(waylandProviderProvider
+              .select((v) => v.xdgPopups[viewId]!.isClosing));
           return IgnorePointer(
             ignoring: isClosing,
             child: child,
@@ -108,7 +117,8 @@ class _Animations extends ConsumerStatefulWidget {
   }) : super(key: key);
 }
 
-class AnimationsState extends ConsumerState<_Animations> with SingleTickerProviderStateMixin {
+class AnimationsState extends ConsumerState<_Animations>
+    with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
@@ -130,7 +140,12 @@ class AnimationsState extends ConsumerState<_Animations> with SingleTickerProvid
   late final Animation<Offset> _offsetAnimation = Tween<Offset>(
     begin: Offset(
       0.0,
-      -10.0 / ref.read(surfaceStatesProvider(widget.viewId)).surfaceSize.height,
+      -10.0 /
+          ref
+              .read(waylandProviderProvider)
+              .surfaces[widget.viewId]!
+              .surfaceSize
+              .height,
     ),
     end: Offset.zero,
   ).animate(CurvedAnimation(

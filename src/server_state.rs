@@ -260,6 +260,26 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                                     }
                                 }
                             }
+                            "resize_window" => {
+                                let args = method_call.arguments().unwrap();
+                                let view_id = get_value(args, "view_id").long_value().unwrap();
+                                let width = get_value(args, "width").long_value().unwrap();
+                                let height = get_value(args, "height").long_value().unwrap();
+
+                                if let Some(surface) = data.state.xdg_toplevels.get(&(view_id as u64)).cloned() {
+                                    surface.with_pending_state(|state| {
+                                        state.size = Some((width as i32, height as i32).into());
+                                    });
+                                    surface.send_pending_configure();
+                                    result.success(None);
+                                } else {
+                                    result.error(
+                                        "surface_doesnt_exist".to_string(),
+                                        format!("Surface {view_id} doesn't exist"),
+                                        None,
+                                    );
+                                }
+                            }
                             _ => {
                                 result.success(None);
                             }

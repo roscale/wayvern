@@ -12,7 +12,7 @@ part of '../../../util/state/screen_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$ScreenState {
@@ -32,7 +32,9 @@ mixin _$ScreenState {
   /// variable contains the size 1000x500.
   Size get rotatedSize => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of ScreenState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $ScreenStateCopyWith<ScreenState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -56,6 +58,8 @@ class _$ScreenStateCopyWithImpl<$Res, $Val extends ScreenState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of ScreenState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -109,6 +113,8 @@ class __$$ScreenStateImplCopyWithImpl<$Res>
       _$ScreenStateImpl _value, $Res Function(_$ScreenStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of ScreenState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -180,7 +186,7 @@ class _$ScreenStateImpl implements _ScreenState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$ScreenStateImpl &&
@@ -197,7 +203,9 @@ class _$ScreenStateImpl implements _ScreenState {
   int get hashCode =>
       Object.hash(runtimeType, on, pending, rotation, size, rotatedSize);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of ScreenState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$ScreenStateImplCopyWith<_$ScreenStateImpl> get copyWith =>
@@ -214,26 +222,29 @@ abstract class _ScreenState implements ScreenState {
 
   @override
   bool get on;
-  @override
 
   /// Turn on/off operations have not yet finished.
-  bool get pending;
   @override
+  bool get pending;
 
   /// Rotation expressed in clockwise quarter turns.
-  int get rotation;
   @override
+  int get rotation;
 
   /// The screen size, before rotation.
-  Size get size;
   @override
+  Size get size;
 
   /// The screen size, after rotation.
   /// If the physical screen is 500x1000 in portrait and the device is rotated in landscape, this
   /// variable contains the size 1000x500.
-  Size get rotatedSize;
   @override
-  @JsonKey(ignore: true)
+  Size get rotatedSize;
+
+  /// Create a copy of ScreenState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$ScreenStateImplCopyWith<_$ScreenStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

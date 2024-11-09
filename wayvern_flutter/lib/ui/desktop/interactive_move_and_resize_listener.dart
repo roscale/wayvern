@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_surface_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 import 'package:zenith/ui/desktop/manual_pan_gesture_recognizer.dart';
@@ -19,10 +20,12 @@ class InteractiveMoveAndResizeListener extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<InteractiveMoveAndResizeListener> createState() => _InteractiveMoveAndResizeListenerState();
+  ConsumerState<InteractiveMoveAndResizeListener> createState() =>
+      _InteractiveMoveAndResizeListenerState();
 }
 
-class _InteractiveMoveAndResizeListenerState extends ConsumerState<InteractiveMoveAndResizeListener> {
+class _InteractiveMoveAndResizeListenerState
+    extends ConsumerState<InteractiveMoveAndResizeListener> {
   ProviderSubscription? interactiveMoveSubscription;
   ProviderSubscription? interactiveResizeSubscription;
 
@@ -30,7 +33,8 @@ class _InteractiveMoveAndResizeListenerState extends ConsumerState<InteractiveMo
   Widget build(BuildContext context) {
     return RawGestureDetector(
       gestures: <Type, GestureRecognizerFactory>{
-        ManualPanGestureRecognizer: GestureRecognizerFactoryWithHandlers<ManualPanGestureRecognizer>(
+        ManualPanGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<ManualPanGestureRecognizer>(
           () => ManualPanGestureRecognizer(),
           _initializer,
         ),
@@ -49,7 +53,8 @@ class _InteractiveMoveAndResizeListenerState extends ConsumerState<InteractiveMo
       windowResize.startPotentialResize();
 
       interactiveMoveSubscription = ref.listenManual(
-        xdgToplevelStatesProvider(widget.viewId).select((v) => v.interactiveMoveRequested),
+        waylandProviderProvider.select(
+            (v) => v.xdgToplevels[widget.viewId]!.interactiveMoveRequested),
         (_, __) {
           var windowPosition = ref.read(windowPositionProvider(widget.viewId));
           windowMove.startMove(windowPosition);
@@ -61,13 +66,21 @@ class _InteractiveMoveAndResizeListenerState extends ConsumerState<InteractiveMo
       );
 
       interactiveResizeSubscription = ref.listenManual<ResizeEdgeObject>(
-        xdgToplevelStatesProvider(widget.viewId).select((v) => v.interactiveResizeRequested),
+        waylandProviderProvider.select(
+            (v) => v.xdgToplevels[widget.viewId]!.interactiveResizeRequested),
         (_, ResizeEdgeObject? resizeEdge) {
           if (resizeEdge == null) {
             return;
           }
 
-          Size size = ref.read(xdgSurfaceStatesProvider(widget.viewId)).visibleBounds.size;
+          Size size = ref
+              .read(waylandProviderProvider)
+              .xdgSurfaces[widget.viewId]!
+              .visibleBounds
+              .size;
+
+          print("ResizeEdge: ${resizeEdge.edge}");
+
           windowResize.startResize(resizeEdge.edge, size);
 
           // We can start resizing the window.

@@ -12,7 +12,7 @@ part of '../../../util/state/key_tracker.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$KeyState {
@@ -23,7 +23,9 @@ mixin _$KeyState {
   Object get up => throw _privateConstructorUsedError;
   Timer? get longPressTimer => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of KeyState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $KeyStateCopyWith<KeyState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -52,6 +54,8 @@ class _$KeyStateCopyWithImpl<$Res, $Val extends KeyState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of KeyState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -104,6 +108,8 @@ class __$$KeyStateImplCopyWithImpl<$Res>
       _$KeyStateImpl _value, $Res Function(_$KeyStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of KeyState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -161,7 +167,7 @@ class _$KeyStateImpl implements _KeyState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$KeyStateImpl &&
@@ -185,7 +191,9 @@ class _$KeyStateImpl implements _KeyState {
       const DeepCollectionEquality().hash(up),
       longPressTimer);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of KeyState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$KeyStateImplCopyWith<_$KeyStateImpl> get copyWith =>
@@ -213,8 +221,11 @@ abstract class _KeyState implements KeyState {
   Object get up;
   @override
   Timer? get longPressTimer;
+
+  /// Create a copy of KeyState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$KeyStateImplCopyWith<_$KeyStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

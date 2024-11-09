@@ -3,13 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
+import 'package:zenith/ui/common/surface.dart';
 
 class XdgToplevelSurface extends ConsumerWidget {
   final int viewId;
 
   const XdgToplevelSurface({
-    required super.key,
+    super.key,
     required this.viewId,
   });
 
@@ -20,14 +22,16 @@ class XdgToplevelSurface extends ConsumerWidget {
       onVisibilityChanged: (VisibilityInfo info) {
         bool visible = info.visibleFraction > 0;
         if (ref.context.mounted) {
-          ref.read(xdgToplevelStatesProvider(viewId).notifier).visible = visible;
+          // ref.read(xdgToplevelStatesProvider(viewId).notifier).visible = visible;
         }
       },
       child: _SurfaceFocus(
         viewId: viewId,
         child: _PointerListener(
           viewId: viewId,
-          child: ref.watch(surfaceWidgetProvider(viewId)),
+          child: Surface(
+            viewId: viewId,
+          ),
         ),
       ),
     );
@@ -47,12 +51,18 @@ class _SurfaceFocus extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Shortcuts(
       shortcuts: {
-        const SingleActivator(LogicalKeyboardKey.tab): DisableFocusTraversalIntent(),
-        const SingleActivator(LogicalKeyboardKey.tab, shift: true): DisableFocusTraversalIntent(),
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): DisableFocusTraversalIntent(),
-        const SingleActivator(LogicalKeyboardKey.arrowRight): DisableFocusTraversalIntent(),
-        const SingleActivator(LogicalKeyboardKey.arrowDown): DisableFocusTraversalIntent(),
-        const SingleActivator(LogicalKeyboardKey.arrowUp): DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab):
+            DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab, shift: true):
+            DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft):
+            DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowRight):
+            DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowDown):
+            DisableFocusTraversalIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowUp):
+            DisableFocusTraversalIntent(),
       },
       child: Actions(
         actions: {
@@ -60,7 +70,10 @@ class _SurfaceFocus extends ConsumerWidget {
         },
         child: Consumer(
           builder: (BuildContext context, WidgetRef ref, Widget? child) {
-            final focusNode = ref.watch(xdgToplevelStatesProvider(viewId)).focusNode;
+            final focusNode = ref
+                .watch(waylandProviderProvider)
+                .xdgToplevels[viewId]!
+                .focusNode;
 
             return Focus(
               focusNode: focusNode,
@@ -87,7 +100,11 @@ class _PointerListener extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Listener(
-      onPointerDown: (_) => ref.read(xdgToplevelStatesProvider(viewId)).focusNode.requestFocus(),
+      onPointerDown: (_) => ref
+          .read(waylandProviderProvider)
+          .xdgToplevels[viewId]!
+          .focusNode
+          .requestFocus(),
       child: child,
     );
   }

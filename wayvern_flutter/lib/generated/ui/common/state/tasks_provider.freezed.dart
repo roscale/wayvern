@@ -12,7 +12,7 @@ part of '../../../../ui/common/state/tasks_provider.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$TasksState {
@@ -23,7 +23,9 @@ mixin _$TasksState {
   /// animate their closing instead of synchronizing with the tasks list immediately.
   IList<DiffOperation<int>> get diff => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of TasksState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $TasksStateCopyWith<TasksState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -47,6 +49,8 @@ class _$TasksStateCopyWithImpl<$Res, $Val extends TasksState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of TasksState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -85,6 +89,8 @@ class __$$TasksStateImplCopyWithImpl<$Res>
       _$TasksStateImpl _value, $Res Function(_$TasksStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of TasksState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -124,7 +130,7 @@ class _$TasksStateImpl implements _TasksState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$TasksStateImpl &&
@@ -138,7 +144,9 @@ class _$TasksStateImpl implements _TasksState {
       const DeepCollectionEquality().hash(tasks),
       const DeepCollectionEquality().hash(diff));
 
-  @JsonKey(ignore: true)
+  /// Create a copy of TasksState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$TasksStateImplCopyWith<_$TasksStateImpl> get copyWith =>
@@ -152,14 +160,17 @@ abstract class _TasksState implements TasksState {
 
   @override
   IList<int> get tasks;
-  @override
 
   /// The list of operations applied to the previous tasks list to obtain current one.
   /// The desktop window stack will use this diff to delay the removal of windows in order to
   /// animate their closing instead of synchronizing with the tasks list immediately.
-  IList<DiffOperation<int>> get diff;
   @override
-  @JsonKey(ignore: true)
+  IList<DiffOperation<int>> get diff;
+
+  /// Create a copy of TasksState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$TasksStateImplCopyWith<_$TasksStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

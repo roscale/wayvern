@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/state/subsurface_state.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
+import 'package:zenith/ui/common/surface.dart';
 
 class Subsurface extends StatelessWidget {
   final int viewId;
@@ -15,10 +17,8 @@ class Subsurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return _Positioner(
       viewId: viewId,
-      child: Consumer(
-        builder: (BuildContext context, WidgetRef ref, Widget? child) {
-          return ref.watch(surfaceWidgetProvider(viewId));
-        },
+      child: Surface(
+        viewId: viewId,
       ),
     );
   }
@@ -36,7 +36,8 @@ class _Positioner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Offset position = ref.watch(subsurfaceStatesProvider(viewId).select((v) => v.position));
+    Offset position = ref.watch(
+        waylandProviderProvider.select((v) => v.subsurfaces[viewId]!.position));
 
     return Positioned(
       left: position.dx,

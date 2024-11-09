@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/util/rect_overflow_box.dart';
 
 class ContainToInputRegion extends ConsumerWidget {
@@ -15,7 +16,8 @@ class ContainToInputRegion extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Rect inputRegion = ref.watch(surfaceStatesProvider(viewId).select((v) => v.inputRegion));
+    Rect inputRegion = ref.watch(
+        waylandProviderProvider.select((v) => v.surfaces[viewId]!.inputRegion));
 
     return CropOverflowBox(
       rect: inputRegion,

@@ -12,7 +12,7 @@ part of '../../../../ui/common/state/xdg_popup_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$XdgPopupState {
@@ -22,7 +22,9 @@ mixin _$XdgPopupState {
       throw _privateConstructorUsedError;
   bool get isClosing => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgPopupState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $XdgPopupStateCopyWith<XdgPopupState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -50,6 +52,8 @@ class _$XdgPopupStateCopyWithImpl<$Res, $Val extends XdgPopupState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of XdgPopupState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -102,6 +106,8 @@ class __$$XdgPopupStateImplCopyWithImpl<$Res>
       _$XdgPopupStateImpl _value, $Res Function(_$XdgPopupStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of XdgPopupState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -168,7 +174,7 @@ class _$XdgPopupStateImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$XdgPopupStateImpl &&
@@ -186,7 +192,9 @@ class _$XdgPopupStateImpl
   int get hashCode => Object.hash(
       runtimeType, parentViewId, position, animationsKey, isClosing);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgPopupState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$XdgPopupStateImplCopyWith<_$XdgPopupStateImpl> get copyWith =>
@@ -208,8 +216,11 @@ abstract class _XdgPopupState implements XdgPopupState {
   GlobalKey<AnimationsState> get animationsKey;
   @override
   bool get isClosing;
+
+  /// Create a copy of XdgPopupState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$XdgPopupStateImplCopyWith<_$XdgPopupStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

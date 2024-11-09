@@ -22,6 +22,8 @@ final installedDesktopEntriesProvider =
   allTransitiveDependencies: null,
 );
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 typedef InstalledDesktopEntriesRef
     = FutureProviderRef<Map<String, DesktopEntry>>;
 String _$localizedDesktopEntriesHash() =>
@@ -40,6 +42,8 @@ final localizedDesktopEntriesProvider =
   allTransitiveDependencies: null,
 );
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 typedef LocalizedDesktopEntriesRef
     = FutureProviderRef<Map<String, LocalizedDesktopEntry>>;
 String _$appDrawerDesktopEntriesHash() =>
@@ -58,6 +62,8 @@ final appDrawerDesktopEntriesProvider =
   allTransitiveDependencies: null,
 );
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 typedef AppDrawerDesktopEntriesRef
     = FutureProviderRef<Iterable<LocalizedDesktopEntry>>;
 String _$iconThemesHash() => r'4732eeb6d4c6b6f7c833dfb52b471bbdfd74592c';
@@ -73,6 +79,8 @@ final iconThemesProvider = FutureProvider<FreedesktopIconThemes>.internal(
   allTransitiveDependencies: null,
 );
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 typedef IconThemesRef = FutureProviderRef<FreedesktopIconThemes>;
 String _$iconHash() => r'54123dbf6e4985c2ec76b742f229966761ed54f3';
 
@@ -207,6 +215,8 @@ class IconProvider extends FutureProvider<File?> {
   }
 }
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 mixin IconRef on FutureProviderRef<File?> {
   /// The parameter `query` of this provider.
   IconQuery get query;
@@ -335,6 +345,8 @@ class FileToScalableImageProvider extends FutureProvider<ScalableImage> {
   }
 }
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 mixin FileToScalableImageRef on FutureProviderRef<ScalableImage> {
   /// The parameter `path` of this provider.
   String get path;
@@ -348,4 +360,4 @@ class _FileToScalableImageProviderElement
   String get path => (origin as FileToScalableImageProvider).path;
 }
 // ignore_for_file: type=lint
-// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member
+// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

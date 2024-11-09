@@ -12,7 +12,7 @@ part of '../../../../ui/desktop/state/window_resize_provider.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$ResizerState {
@@ -22,7 +22,9 @@ mixin _$ResizerState {
   Size get wantedSize => throw _privateConstructorUsedError;
   Offset get delta => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of ResizerState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $ResizerStateCopyWith<ResizerState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -51,6 +53,8 @@ class _$ResizerStateCopyWithImpl<$Res, $Val extends ResizerState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of ResizerState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -109,6 +113,8 @@ class __$$ResizerStateImplCopyWithImpl<$Res>
       _$ResizerStateImpl _value, $Res Function(_$ResizerStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of ResizerState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -170,7 +176,7 @@ class _$ResizerStateImpl implements _ResizerState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$ResizerStateImpl &&
@@ -189,7 +195,9 @@ class _$ResizerStateImpl implements _ResizerState {
   int get hashCode => Object.hash(
       runtimeType, resizing, resizeEdge, startSize, wantedSize, delta);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of ResizerState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$ResizerStateImplCopyWith<_$ResizerStateImpl> get copyWith =>
@@ -214,8 +222,11 @@ abstract class _ResizerState implements ResizerState {
   Size get wantedSize;
   @override
   Offset get delta;
+
+  /// Create a copy of ResizerState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$ResizerStateImplCopyWith<_$ResizerStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

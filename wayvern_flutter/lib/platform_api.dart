@@ -1,38 +1,55 @@
 import 'dart:async';
 import 'dart:ffi' show Finalizable;
 
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:zenith/ui/common/popup_stack.dart';
 import 'package:zenith/ui/common/state/subsurface_state.dart';
 import 'package:zenith/ui/common/state/surface_ids.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_popup_state.dart';
 import 'package:zenith/ui/common/state/xdg_surface_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 
 part 'generated/platform_api.g.dart';
 
+final _windowMappedController = StreamController<int>.broadcast();
+final Stream<int> windowMappedStream = _windowMappedController.stream;
+final Sink<int> windowMappedSink = _windowMappedController.sink;
+
+final _windowUnmappedController = StreamController<int>.broadcast();
+final Stream<int> windowUnmappedStream = _windowUnmappedController.stream;
+final Sink<int> windowUnmappedSink = _windowUnmappedController.sink;
+
 @Riverpod(keepAlive: true)
 class WindowMappedStream extends _$WindowMappedStream {
   @override
-  Stream<int> build() => ref.watch(platformApiProvider).windowMappedStream;
+  Stream<int> build() => windowMappedStream;
 }
 
 @Riverpod(keepAlive: true)
 class WindowUnmappedStream extends _$WindowUnmappedStream {
   @override
-  Stream<int> build() => ref.watch(platformApiProvider).windowUnmappedStream;
+  Stream<int> build() => windowUnmappedStream;
 }
 
 @Riverpod(keepAlive: true)
-Stream<dynamic> _textInputEventStreamById(_TextInputEventStreamByIdRef ref, int viewId) {
-  return ref.watch(platformApiProvider).textInputEventsStream.where((event) => event["view_id"] == viewId);
+Stream<dynamic> _textInputEventStreamById(Ref ref, int viewId) {
+  return ref
+      .watch(platformApiProvider)
+      .textInputEventsStream
+      .where((event) => event["view_id"] == viewId);
 }
 
 @Riverpod(keepAlive: true)
-Future<TextInputEventType> textInputEventStream(TextInputEventStreamRef ref, int viewId) async {
-  dynamic event = await ref.watch(_textInputEventStreamByIdProvider(viewId).future);
+Future<TextInputEventType> textInputEventStream(Ref ref, int viewId) async {
+  dynamic event =
+      await ref.watch(_textInputEventStreamByIdProvider(viewId).future);
   switch (event["type"]) {
     case "enable":
       return TextInputEnable();
@@ -41,7 +58,8 @@ Future<TextInputEventType> textInputEventStream(TextInputEventStreamRef ref, int
     case "commit":
       return TextInputCommit();
     default:
-      throw ArgumentError.value(event["type"], "Must be 'enable', 'disable', or 'commit'", "event['type']");
+      throw ArgumentError.value(event["type"],
+          "Must be 'enable', 'disable', or 'commit'", "event['type']");
   }
 }
 
@@ -64,36 +82,53 @@ class PlatformApi extends _$PlatformApi {
     ref.read(tasksProvider);
 
     state.platform.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case "commit_surface":
-          _commitSurface(call.arguments);
-          break;
-        case "send_text_input_event":
-          _sendTextInputEvent(call.arguments);
-          break;
-        case "interactive_move":
-          _interactiveMove(call.arguments);
-          break;
-        case "interactive_resize":
-          _interactiveResize(call.arguments);
-          break;
-        case "set_title":
-          _setTitle(call.arguments);
-          break;
-        case "set_app_id":
-          _setAppId(call.arguments);
-          break;
-        case "request_maximize":
-          _requestMaximize(call.arguments);
-          break;
-        case "destroy_surface":
-          _destroySurface(call.arguments);
-          break;
-        default:
-          throw PlatformException(
-            code: "unknown_method",
-            message: "Unknown method ${call.method}",
-          );
+      try {
+        switch (call.method) {
+          case "new_surface":
+            _newSurface(call.arguments);
+            break;
+          case "new_subsurface":
+            _newSubsurface(call.arguments);
+            break;
+          case "new_toplevel":
+            _newToplevelSurface(call.arguments);
+            break;
+          case "new_popup":
+            _newPopupSurface(call.arguments);
+            break;
+          case "commit_surface":
+            _commitSurface(call.arguments);
+            break;
+          case "send_text_input_event":
+            _sendTextInputEvent(call.arguments);
+            break;
+          case "interactive_move":
+            _interactiveMove(call.arguments);
+            break;
+          case "interactive_resize":
+            _interactiveResize(call.arguments);
+            break;
+          case "set_title":
+            _setTitle(call.arguments);
+            break;
+          case "set_app_id":
+            _setAppId(call.arguments);
+            break;
+          case "request_maximize":
+            _requestMaximize(call.arguments);
+            break;
+          case "destroy_surface":
+            _destroySurface(call.arguments);
+            break;
+          default:
+            throw PlatformException(
+              code: "unknown_method",
+              message: "Unknown method ${call.method}",
+            );
+        }
+      } catch (e, s) {
+        FlutterError.reportError(FlutterErrorDetails(exception: e, stack: s));
+        rethrow;
       }
     });
   }
@@ -208,7 +243,9 @@ class PlatformApi extends _$PlatformApi {
   }
 
   Stream<TextInputEventType> getTextInputEventsForViewId(int viewId) {
-    return state.textInputEventsStream.where((event) => event["view_id"] == viewId).map((event) {
+    return state.textInputEventsStream
+        .where((event) => event["view_id"] == viewId)
+        .map((event) {
       switch (event["type"]) {
         case "enable":
           return TextInputEnable();
@@ -217,7 +254,8 @@ class PlatformApi extends _$PlatformApi {
         case "commit":
           return TextInputCommit();
         default:
-          throw ArgumentError.value(event["type"], "Must be 'enable', 'disable', or 'commit'", "event['type']");
+          throw ArgumentError.value(event["type"],
+              "Must be 'enable', 'disable', or 'commit'", "event['type']");
       }
     });
   }
@@ -229,13 +267,15 @@ class PlatformApi extends _$PlatformApi {
   }
 
   Future<AuthenticationResponse> unlockSession(String password) async {
-    Map<String, dynamic>? response = await state.platform.invokeMapMethod("unlock_session", {
+    Map<String, dynamic>? response =
+        await state.platform.invokeMapMethod("unlock_session", {
       "password": password,
     });
     if (response == null) {
       return AuthenticationResponse(false, "");
     }
-    return AuthenticationResponse(response["success"] as bool, response["message"] as String);
+    return AuthenticationResponse(
+        response["success"] as bool, response["message"] as String);
   }
 
   /// The display will not generate frame events anymore if it's disabled, meaning that rendering is stopped.
@@ -245,11 +285,69 @@ class PlatformApi extends _$PlatformApi {
     });
   }
 
+  void _newSurface(dynamic event) {
+    int viewId = event["view_id"];
+    ref.read(waylandProviderProvider.notifier).addSurface(viewId);
+  }
+
+  void _newSubsurface(dynamic event) {
+    int viewId = event["view_id"];
+    int parent = event["parent"];
+    ref.read(waylandProviderProvider.notifier).addSubsurface(viewId, parent);
+  }
+
+  void _newToplevelSurface(dynamic event) {
+    int viewId = event["view_id"];
+    ref.read(waylandProviderProvider.notifier).addXdgSurface(viewId);
+    ref.read(waylandProviderProvider.notifier).addXdgToplevel(viewId);
+  }
+
+  void _newPopupSurface(dynamic event) {
+    int viewId = event["view_id"];
+    int parent = event["parent"];
+    ref.read(waylandProviderProvider.notifier).addXdgSurface(viewId);
+    ref.read(waylandProviderProvider.notifier).addXdgPopup(viewId, parent);
+  }
+
   void _commitSurface(dynamic event) {
     int viewId = event["view_id"];
-    ref.read(surfaceIdsProvider.notifier).update((state) => state.add(viewId));
 
-    dynamic surface = event["surface"];
+    // for (int id in subsurfaceIdsBelow) {
+    //   ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
+    // }
+    //
+    // for (int id in subsurfaceIdsAbove) {
+    //   ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
+    // }
+
+    SurfaceCommitData commitData = _parseSurfaceCommitData(event);
+    ref.read(waylandProviderProvider.notifier).commit(viewId, commitData);
+
+    // bool hasToplevelDecoration = event["has_toplevel_decoration"];
+    // if (hasToplevelDecoration) {
+    //   int toplevelDecorationInt = event["toplevel_decoration"];
+    //   var decoration = ToplevelDecoration.fromInt(toplevelDecorationInt);
+    //   ref
+    //       .read(xdgToplevelStatesProvider(viewId).notifier)
+    //       .setDecoration(decoration);
+    // }
+    //
+    // bool hasToplevelTitle = event["has_toplevel_title"];
+    // if (hasToplevelTitle) {
+    //   String title = event["toplevel_title"];
+    //   ref.read(xdgToplevelStatesProvider(viewId).notifier).setTitle(title);
+    // }
+    //
+    // bool hasToplevelAppId = event["has_toplevel_app_id"];
+    // if (hasToplevelAppId) {
+    //   String appId = event["toplevel_app_id"];
+    //   ref.read(xdgToplevelStatesProvider(viewId).notifier).setAppId(appId);
+    // }
+  }
+
+  SurfaceCommitData _parseSurfaceCommitData(dynamic data) {
+    int viewId = data["view_id"];
+    dynamic surface = data["surface"];
     int role = surface["role"];
 
     int textureIdInt = surface["textureId"];
@@ -258,7 +356,8 @@ class PlatformApi extends _$PlatformApi {
     // I should make a minimum reproducible example and file a bug.
     late TextureId textureId;
 
-    TextureId currentTextureId = ref.read(surfaceStatesProvider(viewId)).textureId;
+    TextureId currentTextureId =
+        ref.read(waylandProviderProvider).surfaces[viewId]!.textureId;
     if (textureIdInt == currentTextureId.value) {
       textureId = currentTextureId;
     } else {
@@ -287,93 +386,75 @@ class PlatformApi extends _$PlatformApi {
     List<dynamic> subsurfaceBelow = surface["subsurfaces_below"];
     List<dynamic> subsurfaceAbove = surface["subsurfaces_above"];
 
-    List<int> subsurfaceIdsBelow = subsurfaceBelow.cast<int>();
-    List<int> subsurfaceIdsAbove = subsurfaceAbove.cast<int>();
+    final subsurfaceIdsBelow = subsurfaceBelow.cast<int>().lockUnsafe;
+    final subsurfaceIdsAbove = subsurfaceAbove.cast<int>().lockUnsafe;
 
-    for (int id in subsurfaceIdsBelow) {
-      ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
+    return SurfaceCommitData(
+      role: SurfaceRole.values[role],
+      textureId: textureId,
+      surfacePosition: Offset(x.toDouble(), y.toDouble()),
+      surfaceSize: Size(width.toDouble(), height.toDouble()),
+      scale: scale.toDouble(),
+      subsurfacesBelow: subsurfaceIdsBelow,
+      subsurfacesAbove: subsurfaceIdsAbove,
+      inputRegion: inputRegionRect,
+      subsurfaceCommitData: _parseSubsurfaceCommitData(data),
+      xdgSurfaceCommitData: _parseXdgSurfaceCommitData(data),
+    );
+  }
+
+  SubsurfaceCommitData? _parseSubsurfaceCommitData(dynamic data) {
+    dynamic subsurface = data["subsurface"];
+    if (subsurface == null) {
+      return null;
     }
 
-    for (int id in subsurfaceIdsAbove) {
-      ref.read(subsurfaceStatesProvider(id).notifier).set_parent(viewId);
+    int x = subsurface["x"];
+    int y = subsurface["y"];
+    var position = Offset(x.toDouble(), y.toDouble());
+    return SubsurfaceCommitData(
+      position: position,
+    );
+  }
+
+  XdgSurfaceCommitData? _parseXdgSurfaceCommitData(dynamic data) {
+    dynamic xdgSurface = data["xdg_surface"];
+    if (xdgSurface == null) {
+      return null;
     }
 
-    ref.read(surfaceStatesProvider(viewId).notifier).commit(
-          role: SurfaceRole.values[role],
-          textureId: textureId,
-          surfacePosition: Offset(x.toDouble(), y.toDouble()),
-          surfaceSize: Size(width.toDouble(), height.toDouble()),
-          scale: scale.toDouble(),
-          subsurfacesBelow: subsurfaceIdsBelow,
-          subsurfacesAbove: subsurfaceIdsAbove,
-          inputRegion: inputRegionRect,
-        );
+    int role = xdgSurface["role"];
+    int x = xdgSurface["x"];
+    int y = xdgSurface["y"];
+    int width = xdgSurface["width"];
+    int height = xdgSurface["height"];
+    var visibleBounds = Rect.fromLTWH(
+      x.toDouble(),
+      y.toDouble(),
+      width.toDouble(),
+      height.toDouble(),
+    );
+    return XdgSurfaceCommitData(
+      role: XdgSurfaceRole.values[role],
+      visibleBounds: visibleBounds,
+      xdgPopupCommitData: _parseXdgPopupCommitData(data),
+    );
+  }
 
-    bool hasXdgSurface = event["has_xdg_surface"];
-    if (hasXdgSurface) {
-      dynamic xdgSurface = event["xdg_surface"];
-      int role = xdgSurface["role"];
-      int x = xdgSurface["x"];
-      int y = xdgSurface["y"];
-      int width = xdgSurface["width"];
-      int height = xdgSurface["height"];
-
-      ref.read(xdgSurfaceStatesProvider(viewId).notifier).commit(
-            role: XdgSurfaceRole.values[role],
-            visibleBounds: Rect.fromLTWH(
-              x.toDouble(),
-              y.toDouble(),
-              width.toDouble(),
-              height.toDouble(),
-            ),
-          );
-
-      bool hasXdgPopup = event["has_xdg_popup"];
-      if (hasXdgPopup) {
-        dynamic xdgPopup = event["xdg_popup"];
-        int parentId = xdgPopup["parent_id"];
-        int x = xdgPopup["x"];
-        int y = xdgPopup["y"];
-        // TODO: What to do with these?
-        int width = xdgPopup["width"];
-        int height = xdgPopup["height"];
-
-        ref.read(xdgPopupStatesProvider(viewId).notifier).commit(
-              parentViewId: parentId,
-              position: Offset(x.toDouble(), y.toDouble()),
-            );
-      }
+  // parse popup
+  XdgPopupCommitData? _parseXdgPopupCommitData(dynamic data) {
+    dynamic xdgPopup = data["xdg_popup"];
+    if (xdgPopup == null) {
+      return null;
     }
 
-    bool hasSubsurface = event["has_subsurface"];
-    if (hasSubsurface) {
-      dynamic subsurface = event["subsurface"];
-      int x = subsurface["x"];
-      int y = subsurface["y"];
-      var position = Offset(x.toDouble(), y.toDouble());
-      ref.read(subsurfaceStatesProvider(viewId).notifier).commit(
-            position: position,
-          );
-    }
+    int x = xdgPopup["x"];
+    int y = xdgPopup["y"];
+    var position = Offset(x.toDouble(), y.toDouble());
 
-    bool hasToplevelDecoration = event["has_toplevel_decoration"];
-    if (hasToplevelDecoration) {
-      int toplevelDecorationInt = event["toplevel_decoration"];
-      var decoration = ToplevelDecoration.fromInt(toplevelDecorationInt);
-      ref.read(xdgToplevelStatesProvider(viewId).notifier).setDecoration(decoration);
-    }
-
-    bool hasToplevelTitle = event["has_toplevel_title"];
-    if (hasToplevelTitle) {
-      String title = event["toplevel_title"];
-      ref.read(xdgToplevelStatesProvider(viewId).notifier).setTitle(title);
-    }
-
-    bool hasToplevelAppId = event["has_toplevel_app_id"];
-    if (hasToplevelAppId) {
-      String appId = event["toplevel_app_id"];
-      ref.read(xdgToplevelStatesProvider(viewId).notifier).setAppId(appId);
-    }
+    return XdgPopupCommitData(
+      position: position,
+    );
   }
 
   void _sendTextInputEvent(dynamic event) {
@@ -382,43 +463,50 @@ class PlatformApi extends _$PlatformApi {
 
   void _interactiveMove(dynamic event) {
     int viewId = event["view_id"];
-    ref.read(xdgToplevelStatesProvider(viewId).notifier).requestInteractiveMove();
+    ref.read(waylandProviderProvider.notifier).requestInteractiveMove(viewId);
   }
 
   void _interactiveResize(dynamic event) {
     int viewId = event["view_id"];
     int edge = event["edge"];
+
     ResizeEdge resizeEdge = ResizeEdge.fromInt(edge);
-    ref.read(xdgToplevelStatesProvider(viewId).notifier).requestInteractiveResize(resizeEdge);
+
+    ref
+        .read(waylandProviderProvider.notifier)
+        .requestInteractiveResize(viewId, resizeEdge);
   }
 
   void _setTitle(dynamic event) {
     int viewId = event["view_id"];
     String title = event["title"];
-    ref.read(xdgToplevelStatesProvider(viewId).notifier).setTitle(title);
+    ref.read(waylandProviderProvider.notifier).setTitle(viewId, title);
   }
 
   void _setAppId(dynamic event) {
     int viewId = event["view_id"];
     String appId = event["app_id"];
-    ref.read(xdgToplevelStatesProvider(viewId).notifier).setTitle(appId);
+    ref.read(waylandProviderProvider.notifier).setAppId(viewId, appId);
   }
 
   void _requestMaximize(dynamic event) {
     int viewId = event["view_id"];
     bool maximize = event["maximize"];
-    // Do not couple windowStateProvider here.
-    ref.read(xdgToplevelStatesProvider(viewId).notifier).requestMaximize(maximize);
+    ref
+        .read(waylandProviderProvider.notifier)
+        .requestMaximize(viewId, maximize);
   }
 
   void _destroySurface(dynamic event) async {
     int viewId = event["view_id"];
-    ref.read(surfaceStatesProvider(viewId).notifier).unmap();
+
+    ref.read(waylandProviderProvider.notifier).unmapSurface(viewId);
+
     // TODO: Find a better way. Maybe store subscriptions in a list.
     // 3 sec is more than enough for any close animations.
     await Future.delayed(const Duration(seconds: 3));
-    ref.read(surfaceStatesProvider(viewId).notifier).dispose();
-    ref.read(surfaceIdsProvider.notifier).update((state) => state.remove(viewId));
+
+    ref.read(waylandProviderProvider.notifier).removeSurface(viewId);
   }
 
   Future<void> hideKeyboard(int viewId) {
@@ -429,27 +517,16 @@ class PlatformApi extends _$PlatformApi {
 }
 
 class PlatformApiState {
-  final _textInputEventsStreamController = StreamController<dynamic>.broadcast();
+  final _textInputEventsStreamController =
+      StreamController<dynamic>.broadcast();
   late final Stream<dynamic> textInputEventsStream;
   late final Sink<dynamic> textInputEventsSink;
 
   MethodChannel platform = const MethodChannel('platform');
 
-  final _windowMappedController = StreamController<int>.broadcast();
-  late final Stream<int> windowMappedStream;
-  late final Sink<int> windowMappedSink;
-
-  final _windowUnmappedController = StreamController<int>.broadcast();
-  late final Stream<int> windowUnmappedStream;
-  late final Sink<int> windowUnmappedSink;
-
   PlatformApiState() {
     textInputEventsStream = _textInputEventsStreamController.stream;
     textInputEventsSink = _textInputEventsStreamController.sink;
-    windowMappedStream = _windowMappedController.stream;
-    windowMappedSink = _windowMappedController.sink;
-    windowUnmappedStream = _windowUnmappedController.stream;
-    windowUnmappedSink = _windowUnmappedController.sink;
   }
 }
 
@@ -475,7 +552,10 @@ class TextureId implements Finalizable {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || (other is TextureId && runtimeType == other.runtimeType && value == other.value);
+      identical(this, other) ||
+      (other is TextureId &&
+          runtimeType == other.runtimeType &&
+          value == other.value);
 
   @override
   int get hashCode => value.hashCode;

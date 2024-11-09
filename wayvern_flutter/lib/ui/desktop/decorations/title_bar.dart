@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/platform_api.dart';
 import 'package:zenith/ui/common/app_icon.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 import 'package:zenith/ui/desktop/state/window_move_provider.dart';
 import 'package:zenith/ui/desktop/state/window_position_provider.dart';
@@ -28,10 +29,14 @@ class _TitleBarState extends ConsumerState<TitleBar> {
     return GestureDetector(
       onPanDown: (DragDownDetails details) {
         Offset startPosition = ref.read(windowPositionProvider(widget.viewId));
-        ref.read(windowMoveProvider(widget.viewId).notifier).startMove(startPosition);
+        ref
+            .read(windowMoveProvider(widget.viewId).notifier)
+            .startMove(startPosition);
       },
       onPanUpdate: (DragUpdateDetails details) {
-        ref.read(windowMoveProvider(widget.viewId).notifier).move(details.delta);
+        ref
+            .read(windowMoveProvider(widget.viewId).notifier)
+            .move(details.delta);
       },
       onPanEnd: (_) {
         ref.read(windowMoveProvider(widget.viewId).notifier).endMove();
@@ -77,7 +82,8 @@ class _WindowTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String title = ref.watch(xdgToplevelStatesProvider(viewId).select((v) => v.title));
+    String title = ref.watch(
+        waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.title));
 
     return Positioned.fill(
       child: Align(
@@ -109,7 +115,8 @@ class _WindowButtons extends ConsumerWidget {
         _WindowButton(
           icon: const Icon(Icons.close),
           iconSize: 18,
-          onPressed: () => ref.read(platformApiProvider.notifier).closeView(viewId),
+          onPressed: () =>
+              ref.read(platformApiProvider.notifier).closeView(viewId),
         ),
         _WindowButton(
           icon: const RotatedBox(
@@ -168,7 +175,8 @@ class _AppIcon extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String appId = ref.watch(xdgToplevelStatesProvider(viewId).select((v) => v.appId));
+    String appId = ref.watch(
+        waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.appId));
 
     return SizedBox(
       height: 30,

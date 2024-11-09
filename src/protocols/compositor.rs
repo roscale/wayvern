@@ -37,11 +37,42 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             }));
         });
         self.surfaces.insert(view_id, surface.clone());
+
+        let codec = Rc::new(StandardMethodCodec::new());
+        let mut method_channel = MethodChannel::new(
+            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
+            "platform".to_string(),
+            codec,
+        );
+        method_channel.invoke_method("new_surface", Some(Box::new(EncodableValue::Map(vec![
+            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+        ]))), None);
+    }
+
+    fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+        let view_id = with_states(surface, |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+
+        let parent_view_id = with_states(parent, |surface_data| {
+            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+        });
+
+        let codec = Rc::new(StandardMethodCodec::new());
+        let mut method_channel = MethodChannel::new(
+            self.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
+            "platform".to_string(),
+            codec,
+        );
+        method_channel.invoke_method("new_subsurface", Some(Box::new(EncodableValue::Map(vec![
+            (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+            (EncodableValue::String("parent".to_string()), EncodableValue::Int64(parent_view_id as i64)),
+        ]))), None);
     }
 
     fn commit(&mut self, surface: &WlSurface) {
         self.send_initial_configure(surface);
-        
+
         let mut commit_message = with_states(surface, |surface_data| {
             let role = surface_data.role;
 
@@ -145,7 +176,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
                         Some(XdgPopupCommitMessage {
                             parent_id,
-                            geometry: dbg!(popup_data.current.geometry),
+                            geometry: popup_data.current.geometry,
                         })
                     }
                     _ => None,
@@ -225,7 +256,7 @@ impl<BackendData: Backend> ServerState<BackendData> {
         let view_id = with_states(surface, |states| {
             states.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
-        
+
         if let Some(toplevel) = self.xdg_toplevels.get(&view_id) {
             let initial_configure_sent = with_states(surface, |states| {
                 states

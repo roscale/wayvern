@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 import 'package:zenith/ui/desktop/app_drawer/app_drawer_button.dart';
 import 'package:zenith/ui/desktop/state/task_switcher_provider.dart';
@@ -65,24 +66,33 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
   Widget build(BuildContext context) {
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? child) {
-        bool taskSwitcherShown = ref.watch(taskSwitcherProvider.select((value) => value.shown));
+        bool taskSwitcherShown =
+            ref.watch(taskSwitcherProvider.select((value) => value.shown));
         final taskSwitcherShortcuts = !taskSwitcherShown
             ? {
-                const SingleActivator(LogicalKeyboardKey.tab, alt: true, includeRepeats: false):
-                    const ShowTaskSwitcher(true),
-                const SingleActivator(LogicalKeyboardKey.tab, alt: true, shift: true, includeRepeats: false):
-                    const ShowTaskSwitcher(false),
+                const SingleActivator(LogicalKeyboardKey.tab,
+                    alt: true,
+                    includeRepeats: false): const ShowTaskSwitcher(true),
+                const SingleActivator(LogicalKeyboardKey.tab,
+                    alt: true,
+                    shift: true,
+                    includeRepeats: false): const ShowTaskSwitcher(false),
               }
             : {
-                SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.altLeft): HideTaskSwitcher(),
-                const SingleActivator(LogicalKeyboardKey.tab, alt: true, includeRepeats: false): TaskSwitcherGoToNext(),
-                const SingleActivator(LogicalKeyboardKey.tab, alt: true, shift: true, includeRepeats: false):
-                    TaskSwitcherGoToPrevious(),
+                SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.altLeft):
+                    HideTaskSwitcher(),
+                const SingleActivator(LogicalKeyboardKey.tab,
+                    alt: true, includeRepeats: false): TaskSwitcherGoToNext(),
+                const SingleActivator(LogicalKeyboardKey.tab,
+                    alt: true,
+                    shift: true,
+                    includeRepeats: false): TaskSwitcherGoToPrevious(),
               };
 
         return Shortcuts(
           shortcuts: {
-            SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.superKey): ToggleAppDrawerIntent(),
+            SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.superKey):
+                ToggleAppDrawerIntent(),
             ...taskSwitcherShortcuts,
           },
           child: child!,
@@ -91,10 +101,13 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
       child: Actions(
         actions: {
           ToggleAppDrawerIntent: CallbackAction(onInvoke: (_) {
-            ref.read(appDrawerVisibleProvider.notifier).update((visible) => !visible);
+            ref
+                .read(appDrawerVisibleProvider.notifier)
+                .update((visible) => !visible);
             return null;
           }),
-          ShowTaskSwitcher: CallbackAction<ShowTaskSwitcher>(onInvoke: (intent) {
+          ShowTaskSwitcher:
+              CallbackAction<ShowTaskSwitcher>(onInvoke: (intent) {
             ref.read(taskSwitcherProvider.notifier).show(intent.goToNext);
             return null;
           }),
@@ -108,7 +121,11 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
               int index = len - ref.read(taskSwitcherProvider).index - 1;
               int viewId = tasks[index];
               ref.read(tasksProvider.notifier).putInFront(viewId);
-              ref.read(xdgToplevelStatesProvider(viewId)).focusNode.requestFocus();
+              ref
+                  .read(waylandProviderProvider)
+                  .xdgToplevels[viewId]!
+                  .focusNode
+                  .requestFocus();
             }
             return null;
           }),
@@ -134,7 +151,8 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
                     onTapDown: (_) {
                       backgroundFocusNode.requestFocus();
                     },
-                    child: Image.asset("assets/images/background.jpg", fit: BoxFit.cover),
+                    child: Image.asset("assets/images/background.jpg",
+                        fit: BoxFit.cover),
                   ),
                 ),
                 Overlay(
@@ -153,8 +171,10 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
                   ],
                 ),
                 Consumer(
-                  builder: (BuildContext context, WidgetRef ref, Widget? child) {
-                    bool shown = ref.watch(taskSwitcherProvider.select((value) => value.shown));
+                  builder:
+                      (BuildContext context, WidgetRef ref, Widget? child) {
+                    bool shown = ref.watch(
+                        taskSwitcherProvider.select((value) => value.shown));
                     return shown ? child! : const SizedBox();
                   },
                   child: const Center(

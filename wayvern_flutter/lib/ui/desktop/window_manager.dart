@@ -26,19 +26,24 @@ class _WindowManagerState extends ConsumerState<WindowManager> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        ref
-            .read(platformApiProvider.notifier)
-            .maximizedWindowSize(constraints.maxWidth.toInt(), constraints.maxHeight.toInt());
+        ref.read(platformApiProvider.notifier).maximizedWindowSize(
+            constraints.maxWidth.toInt(), constraints.maxHeight.toInt());
 
         Future.microtask(() {
-          ref.read(windowStackProvider.notifier).setDesktopSize(constraints.biggest.floorToDouble());
+          ref
+              .read(windowStackProvider.notifier)
+              .setDesktopSize(constraints.biggest.floorToDouble());
         });
 
         return PortalTarget(
           portalFollower: Listener(
             behavior: HitTestBehavior.translucent,
-            onPointerHover: (event) => ref.read(cursorPositionProvider.notifier).state = event.localPosition,
-            onPointerMove: (event) => ref.read(cursorPositionProvider.notifier).state = event.localPosition,
+            onPointerHover: (event) => ref
+                .read(cursorPositionProvider.notifier)
+                .state = event.localPosition,
+            onPointerMove: (event) => ref
+                .read(cursorPositionProvider.notifier)
+                .state = event.localPosition,
           ),
           child: Consumer(
             builder: (BuildContext context, WidgetRef ref, Widget? child) {
@@ -48,7 +53,11 @@ class _WindowManagerState extends ConsumerState<WindowManager> {
                 clipBehavior: Clip.none,
                 key: ref.watch(windowStackGlobalKeyProvider),
                 children: [
-                  for (int viewId in tasks) ref.watch(windowWidgetProvider(viewId)),
+                  for (int viewId in tasks)
+                    Window(
+                      key: ValueKey(viewId),
+                      viewId: viewId,
+                    ),
                   const PopupStack(),
                 ],
               );

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zenith/ui/common/state/surface_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 
 class SurfaceSize extends ConsumerWidget {
   final int viewId;
@@ -14,7 +14,8 @@ class SurfaceSize extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Size surfaceSize = ref.watch(surfaceStatesProvider(viewId).select((v) => v.surfaceSize));
+    Size surfaceSize = ref.watch(
+        waylandProviderProvider.select((v) => v.surfaces[viewId]!.surfaceSize));
 
     return SizedBox(
       width: surfaceSize.width,

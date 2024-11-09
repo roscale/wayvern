@@ -12,18 +12,17 @@ part of '../../../../ui/common/state/xdg_surface_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$XdgSurfaceState {
-  bool get mapped => throw _privateConstructorUsedError;
   XdgSurfaceRole get role => throw _privateConstructorUsedError;
   Rect get visibleBounds => throw _privateConstructorUsedError;
-  GlobalKey<State<StatefulWidget>> get widgetKey =>
-      throw _privateConstructorUsedError;
-  List<int> get popups => throw _privateConstructorUsedError;
+  IList<int> get popups => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgSurfaceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $XdgSurfaceStateCopyWith<XdgSurfaceState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -34,12 +33,7 @@ abstract class $XdgSurfaceStateCopyWith<$Res> {
           XdgSurfaceState value, $Res Function(XdgSurfaceState) then) =
       _$XdgSurfaceStateCopyWithImpl<$Res, XdgSurfaceState>;
   @useResult
-  $Res call(
-      {bool mapped,
-      XdgSurfaceRole role,
-      Rect visibleBounds,
-      GlobalKey<State<StatefulWidget>> widgetKey,
-      List<int> popups});
+  $Res call({XdgSurfaceRole role, Rect visibleBounds, IList<int> popups});
 }
 
 /// @nodoc
@@ -52,20 +46,16 @@ class _$XdgSurfaceStateCopyWithImpl<$Res, $Val extends XdgSurfaceState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of XdgSurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? mapped = null,
     Object? role = null,
     Object? visibleBounds = null,
-    Object? widgetKey = null,
     Object? popups = null,
   }) {
     return _then(_value.copyWith(
-      mapped: null == mapped
-          ? _value.mapped
-          : mapped // ignore: cast_nullable_to_non_nullable
-              as bool,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
@@ -74,14 +64,10 @@ class _$XdgSurfaceStateCopyWithImpl<$Res, $Val extends XdgSurfaceState>
           ? _value.visibleBounds
           : visibleBounds // ignore: cast_nullable_to_non_nullable
               as Rect,
-      widgetKey: null == widgetKey
-          ? _value.widgetKey
-          : widgetKey // ignore: cast_nullable_to_non_nullable
-              as GlobalKey<State<StatefulWidget>>,
       popups: null == popups
           ? _value.popups
           : popups // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
     ) as $Val);
   }
 }
@@ -94,12 +80,7 @@ abstract class _$$XdgSurfaceStateImplCopyWith<$Res>
       __$$XdgSurfaceStateImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call(
-      {bool mapped,
-      XdgSurfaceRole role,
-      Rect visibleBounds,
-      GlobalKey<State<StatefulWidget>> widgetKey,
-      List<int> popups});
+  $Res call({XdgSurfaceRole role, Rect visibleBounds, IList<int> popups});
 }
 
 /// @nodoc
@@ -110,20 +91,16 @@ class __$$XdgSurfaceStateImplCopyWithImpl<$Res>
       _$XdgSurfaceStateImpl _value, $Res Function(_$XdgSurfaceStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of XdgSurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? mapped = null,
     Object? role = null,
     Object? visibleBounds = null,
-    Object? widgetKey = null,
     Object? popups = null,
   }) {
     return _then(_$XdgSurfaceStateImpl(
-      mapped: null == mapped
-          ? _value.mapped
-          : mapped // ignore: cast_nullable_to_non_nullable
-              as bool,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
@@ -132,14 +109,10 @@ class __$$XdgSurfaceStateImplCopyWithImpl<$Res>
           ? _value.visibleBounds
           : visibleBounds // ignore: cast_nullable_to_non_nullable
               as Rect,
-      widgetKey: null == widgetKey
-          ? _value.widgetKey
-          : widgetKey // ignore: cast_nullable_to_non_nullable
-              as GlobalKey<State<StatefulWidget>>,
       popups: null == popups
-          ? _value._popups
+          ? _value.popups
           : popups // ignore: cast_nullable_to_non_nullable
-              as List<int>,
+              as IList<int>,
     ));
   }
 }
@@ -150,32 +123,18 @@ class _$XdgSurfaceStateImpl
     with DiagnosticableTreeMixin
     implements _XdgSurfaceState {
   const _$XdgSurfaceStateImpl(
-      {required this.mapped,
-      required this.role,
-      required this.visibleBounds,
-      required this.widgetKey,
-      required final List<int> popups})
-      : _popups = popups;
+      {required this.role, required this.visibleBounds, required this.popups});
 
-  @override
-  final bool mapped;
   @override
   final XdgSurfaceRole role;
   @override
   final Rect visibleBounds;
   @override
-  final GlobalKey<State<StatefulWidget>> widgetKey;
-  final List<int> _popups;
-  @override
-  List<int> get popups {
-    if (_popups is EqualUnmodifiableListView) return _popups;
-    // ignore: implicit_dynamic_type
-    return EqualUnmodifiableListView(_popups);
-  }
+  final IList<int> popups;
 
   @override
   String toString({DiagnosticLevel minLevel = DiagnosticLevel.info}) {
-    return 'XdgSurfaceState(mapped: $mapped, role: $role, visibleBounds: $visibleBounds, widgetKey: $widgetKey, popups: $popups)';
+    return 'XdgSurfaceState(role: $role, visibleBounds: $visibleBounds, popups: $popups)';
   }
 
   @override
@@ -183,32 +142,29 @@ class _$XdgSurfaceStateImpl
     super.debugFillProperties(properties);
     properties
       ..add(DiagnosticsProperty('type', 'XdgSurfaceState'))
-      ..add(DiagnosticsProperty('mapped', mapped))
       ..add(DiagnosticsProperty('role', role))
       ..add(DiagnosticsProperty('visibleBounds', visibleBounds))
-      ..add(DiagnosticsProperty('widgetKey', widgetKey))
       ..add(DiagnosticsProperty('popups', popups));
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$XdgSurfaceStateImpl &&
-            (identical(other.mapped, mapped) || other.mapped == mapped) &&
             (identical(other.role, role) || other.role == role) &&
             (identical(other.visibleBounds, visibleBounds) ||
                 other.visibleBounds == visibleBounds) &&
-            (identical(other.widgetKey, widgetKey) ||
-                other.widgetKey == widgetKey) &&
-            const DeepCollectionEquality().equals(other._popups, _popups));
+            const DeepCollectionEquality().equals(other.popups, popups));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, mapped, role, visibleBounds,
-      widgetKey, const DeepCollectionEquality().hash(_popups));
+  int get hashCode => Object.hash(runtimeType, role, visibleBounds,
+      const DeepCollectionEquality().hash(popups));
 
-  @JsonKey(ignore: true)
+  /// Create a copy of XdgSurfaceState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$XdgSurfaceStateImplCopyWith<_$XdgSurfaceStateImpl> get copyWith =>
@@ -218,24 +174,21 @@ class _$XdgSurfaceStateImpl
 
 abstract class _XdgSurfaceState implements XdgSurfaceState {
   const factory _XdgSurfaceState(
-      {required final bool mapped,
-      required final XdgSurfaceRole role,
+      {required final XdgSurfaceRole role,
       required final Rect visibleBounds,
-      required final GlobalKey<State<StatefulWidget>> widgetKey,
-      required final List<int> popups}) = _$XdgSurfaceStateImpl;
+      required final IList<int> popups}) = _$XdgSurfaceStateImpl;
 
-  @override
-  bool get mapped;
   @override
   XdgSurfaceRole get role;
   @override
   Rect get visibleBounds;
   @override
-  GlobalKey<State<StatefulWidget>> get widgetKey;
+  IList<int> get popups;
+
+  /// Create a copy of XdgSurfaceState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  List<int> get popups;
-  @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$XdgSurfaceStateImplCopyWith<_$XdgSurfaceStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

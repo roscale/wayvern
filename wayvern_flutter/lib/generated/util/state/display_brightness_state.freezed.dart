@@ -12,7 +12,7 @@ part of '../../../util/state/display_brightness_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$DisplayBrightnessState {
@@ -22,7 +22,9 @@ mixin _$DisplayBrightnessState {
   double get brightness => throw _privateConstructorUsedError;
   double get savedBrightness => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of DisplayBrightnessState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $DisplayBrightnessStateCopyWith<DisplayBrightnessState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -52,6 +54,8 @@ class _$DisplayBrightnessStateCopyWithImpl<$Res,
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of DisplayBrightnessState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -113,6 +117,8 @@ class __$$DisplayBrightnessStateImplCopyWithImpl<$Res>
       $Res Function(_$DisplayBrightnessStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of DisplayBrightnessState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -174,7 +180,7 @@ class _$DisplayBrightnessStateImpl implements _DisplayBrightnessState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$DisplayBrightnessStateImpl &&
@@ -194,7 +200,9 @@ class _$DisplayBrightnessStateImpl implements _DisplayBrightnessState {
   int get hashCode => Object.hash(runtimeType, available, brightnessFile,
       maxBrightness, brightness, savedBrightness);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of DisplayBrightnessState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$DisplayBrightnessStateImplCopyWith<_$DisplayBrightnessStateImpl>
@@ -220,8 +228,11 @@ abstract class _DisplayBrightnessState implements DisplayBrightnessState {
   double get brightness;
   @override
   double get savedBrightness;
+
+  /// Create a copy of DisplayBrightnessState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$DisplayBrightnessStateImplCopyWith<_$DisplayBrightnessStateImpl>
       get copyWith => throw _privateConstructorUsedError;
 }

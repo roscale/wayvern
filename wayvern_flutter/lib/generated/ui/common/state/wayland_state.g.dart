@@ -1,27 +1,26 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of '../../dbus/dbus.dart';
+part of '../../../../ui/common/state/wayland_state.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$dbusSystemBusHash() => r'6f2ba9cc97b26991ac2b98464491695f31a5b57b';
+String _$waylandProviderHash() => r'5a5700e652a0f2a76422bcfb1b1f99e96cfdb1a6';
 
-/// See also [dbusSystemBus].
-@ProviderFor(dbusSystemBus)
-final dbusSystemBusProvider = Provider<DBusClient>.internal(
-  dbusSystemBus,
-  name: r'dbusSystemBusProvider',
+/// See also [WaylandProvider].
+@ProviderFor(WaylandProvider)
+final waylandProviderProvider =
+    NotifierProvider<WaylandProvider, WaylandStates>.internal(
+  WaylandProvider.new,
+  name: r'waylandProviderProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$dbusSystemBusHash,
+      : _$waylandProviderHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef DbusSystemBusRef = ProviderRef<DBusClient>;
+typedef _$WaylandProvider = Notifier<WaylandStates>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

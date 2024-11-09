@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/app_icon.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 import 'package:zenith/ui/desktop/state/task_switcher_provider.dart';
 
@@ -72,7 +73,8 @@ class TaskSwitcherItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? child) {
-        int taskSwitcherIndex = ref.watch(taskSwitcherProvider.select((value) => value.index));
+        int taskSwitcherIndex =
+            ref.watch(taskSwitcherProvider.select((value) => value.index));
         return Container(
           width: 140,
           decoration: BoxDecoration(
@@ -101,7 +103,8 @@ class TaskSwitcherItem extends ConsumerWidget {
             child: Consumer(
               builder: (BuildContext context, WidgetRef ref, Widget? child) {
                 return Text(
-                  ref.watch(xdgToplevelStatesProvider(task)).title,
+                  ref.watch(waylandProviderProvider
+                      .select((p) => p.xdgToplevels[task]!.title)),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,

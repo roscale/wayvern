@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_surface_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 import 'package:zenith/ui/desktop/state/window_resize_provider.dart';
@@ -43,14 +44,16 @@ class WithResizeHandles extends StatelessWidget {
             children: [
               Container(
                 constraints: BoxConstraints(maxWidth: cornerWidth),
-                child: ResizeHandle(viewId: viewId, resizeEdge: ResizeEdge.topLeft),
+                child: ResizeHandle(
+                    viewId: viewId, resizeEdge: ResizeEdge.topLeft),
               ),
               Expanded(
                 child: ResizeHandle(viewId: viewId, resizeEdge: ResizeEdge.top),
               ),
               Container(
                 constraints: BoxConstraints(maxWidth: cornerWidth),
-                child: ResizeHandle(viewId: viewId, resizeEdge: ResizeEdge.topRight),
+                child: ResizeHandle(
+                    viewId: viewId, resizeEdge: ResizeEdge.topRight),
               ),
             ],
           ),
@@ -172,8 +175,14 @@ class ResizeHandle extends ConsumerWidget {
       cursor: _getMouseCursor(),
       child: GestureDetector(
         onPanDown: (_) {
-          Size size = ref.read(xdgSurfaceStatesProvider(viewId)).visibleBounds.size;
-          ref.read(windowResizeProvider(viewId).notifier).startResize(resizeEdge, size);
+          Size size = ref
+              .read(waylandProviderProvider)
+              .xdgSurfaces[viewId]!
+              .visibleBounds
+              .size;
+          ref
+              .read(windowResizeProvider(viewId).notifier)
+              .startResize(resizeEdge, size);
         },
         onPanUpdate: (DragUpdateDetails details) {
           ref.read(windowResizeProvider(viewId).notifier).resize(details.delta);

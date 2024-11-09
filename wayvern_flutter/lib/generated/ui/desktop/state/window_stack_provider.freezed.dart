@@ -12,7 +12,7 @@ part of '../../../../ui/desktop/state/window_stack_provider.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$WindowStackState {
@@ -20,7 +20,9 @@ mixin _$WindowStackState {
   ISet<int> get animateClosing => throw _privateConstructorUsedError;
   Size get desktopSize => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of WindowStackState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $WindowStackStateCopyWith<WindowStackState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -44,6 +46,8 @@ class _$WindowStackStateCopyWithImpl<$Res, $Val extends WindowStackState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of WindowStackState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -87,6 +91,8 @@ class __$$WindowStackStateImplCopyWithImpl<$Res>
       $Res Function(_$WindowStackStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of WindowStackState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -133,7 +139,7 @@ class _$WindowStackStateImpl extends _WindowStackState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$WindowStackStateImpl &&
@@ -151,7 +157,9 @@ class _$WindowStackStateImpl extends _WindowStackState {
       const DeepCollectionEquality().hash(animateClosing),
       desktopSize);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of WindowStackState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$WindowStackStateImplCopyWith<_$WindowStackStateImpl> get copyWith =>
@@ -172,8 +180,11 @@ abstract class _WindowStackState extends WindowStackState {
   ISet<int> get animateClosing;
   @override
   Size get desktopSize;
+
+  /// Create a copy of WindowStackState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$WindowStackStateImplCopyWith<_$WindowStackStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

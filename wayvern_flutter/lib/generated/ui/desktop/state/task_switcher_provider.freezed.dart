@@ -12,14 +12,16 @@ part of '../../../../ui/desktop/state/task_switcher_provider.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$TaskSwitcherState {
   bool get shown => throw _privateConstructorUsedError;
   int get index => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of TaskSwitcherState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $TaskSwitcherStateCopyWith<TaskSwitcherState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -43,6 +45,8 @@ class _$TaskSwitcherStateCopyWithImpl<$Res, $Val extends TaskSwitcherState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of TaskSwitcherState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -81,6 +85,8 @@ class __$$TaskSwitcherStateImplCopyWithImpl<$Res>
       $Res Function(_$TaskSwitcherStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of TaskSwitcherState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -116,7 +122,7 @@ class _$TaskSwitcherStateImpl implements _TaskSwitcherState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$TaskSwitcherStateImpl &&
@@ -127,7 +133,9 @@ class _$TaskSwitcherStateImpl implements _TaskSwitcherState {
   @override
   int get hashCode => Object.hash(runtimeType, shown, index);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of TaskSwitcherState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$TaskSwitcherStateImplCopyWith<_$TaskSwitcherStateImpl> get copyWith =>
@@ -144,8 +152,11 @@ abstract class _TaskSwitcherState implements TaskSwitcherState {
   bool get shown;
   @override
   int get index;
+
+  /// Create a copy of TaskSwitcherState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$TaskSwitcherStateImplCopyWith<_$TaskSwitcherStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

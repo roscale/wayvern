@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:zenith/platform_api.dart';
-import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 
 part '../../../generated/ui/common/state/tasks_provider.freezed.dart';
 
@@ -19,7 +19,11 @@ class Tasks extends _$Tasks {
           tasks: state.tasks.add(viewId),
           diff: [AddDiffOperation(endOfCollection, viewId)].lockUnsafe,
         );
-        ref.read(xdgToplevelStatesProvider(viewId)).focusNode.requestFocus();
+        ref
+            .read(waylandProviderProvider)
+            .xdgToplevels[viewId]!
+            .focusNode
+            .requestFocus();
       });
     });
 
@@ -30,7 +34,8 @@ class Tasks extends _$Tasks {
           diff: [RemoveDiffOperation(viewId)].lockUnsafe,
         );
         ref
-            .read(xdgToplevelStatesProvider(viewId))
+            .read(waylandProviderProvider)
+            .xdgToplevels[viewId]!
             .focusNode
             .unfocus(disposition: UnfocusDisposition.previouslyFocusedChild);
       });

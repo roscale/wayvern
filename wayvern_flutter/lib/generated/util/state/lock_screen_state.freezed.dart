@@ -12,7 +12,7 @@ part of '../../../util/state/lock_screen_state.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$LockScreenState {
@@ -20,7 +20,9 @@ mixin _$LockScreenState {
   Object get lock => throw _privateConstructorUsedError;
   Object get unlock => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of LockScreenState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $LockScreenStateCopyWith<LockScreenState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -44,6 +46,8 @@ class _$LockScreenStateCopyWithImpl<$Res, $Val extends LockScreenState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of LockScreenState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -81,6 +85,8 @@ class __$$LockScreenStateImplCopyWithImpl<$Res>
       _$LockScreenStateImpl _value, $Res Function(_$LockScreenStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of LockScreenState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -118,7 +124,7 @@ class _$LockScreenStateImpl implements _LockScreenState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$LockScreenStateImpl &&
@@ -134,7 +140,9 @@ class _$LockScreenStateImpl implements _LockScreenState {
       const DeepCollectionEquality().hash(lock),
       const DeepCollectionEquality().hash(unlock));
 
-  @JsonKey(ignore: true)
+  /// Create a copy of LockScreenState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$LockScreenStateImplCopyWith<_$LockScreenStateImpl> get copyWith =>
@@ -154,8 +162,11 @@ abstract class _LockScreenState implements LockScreenState {
   Object get lock;
   @override
   Object get unlock;
+
+  /// Create a copy of LockScreenState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$LockScreenStateImplCopyWith<_$LockScreenStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

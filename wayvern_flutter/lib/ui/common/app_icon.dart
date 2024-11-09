@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freedesktop_desktop_entry/freedesktop_desktop_entry.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:zenith/ui/common/state/desktop_entries.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 
 class AppIconByPath extends StatelessWidget {
@@ -46,8 +47,11 @@ class AppIconByPath extends StatelessWidget {
         }
 
         if (file.path.endsWith('.svg')) {
-          return Consumer(builder: (BuildContext context, WidgetRef ref, Widget? child) {
-            return ref.watch(fileToScalableImageProvider(file.absolute.path)).when(
+          return Consumer(
+              builder: (BuildContext context, WidgetRef ref, Widget? child) {
+            return ref
+                .watch(fileToScalableImageProvider(file.absolute.path))
+                .when(
               data: (ScalableImage scalableImage) {
                 return SizedBox.expand(
                   child: ScalableImageWidget(
@@ -112,7 +116,8 @@ class AppIconByViewId extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String appId = ref.watch(xdgToplevelStatesProvider(viewId).select((v) => v.appId));
+    String appId = ref.watch(
+        waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.appId));
     return AppIconById(id: appId);
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
+import 'package:zenith/ui/common/state/wayland_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 
 class ActivateAndRaise extends ConsumerWidget {
@@ -17,7 +18,11 @@ class ActivateAndRaise extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Listener(
       onPointerDown: (_) {
-        ref.read(xdgToplevelStatesProvider(viewId)).focusNode.requestFocus();
+        ref
+            .read(waylandProviderProvider)
+            .xdgToplevels[viewId]!
+            .focusNode
+            .requestFocus();
         ref.read(tasksProvider.notifier).putInFront(viewId);
       },
       child: child,

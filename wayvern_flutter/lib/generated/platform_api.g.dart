@@ -7,7 +7,7 @@ part of '../platform_api.dart';
 // **************************************************************************
 
 String _$textInputEventStreamByIdHash() =>
-    r'386b8f5b60e3c46d7ee761d72eb165fd631e2fab';
+    r'a73a40883174b54068c1f2c750106f78ce98e647';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -143,6 +143,8 @@ class _TextInputEventStreamByIdProvider extends StreamProvider<dynamic> {
   }
 }
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 mixin _TextInputEventStreamByIdRef on StreamProviderRef<dynamic> {
   /// The parameter `viewId` of this provider.
   int get viewId;
@@ -157,7 +159,7 @@ class _TextInputEventStreamByIdProviderElement
 }
 
 String _$textInputEventStreamHash() =>
-    r'a1c50514a750715c755720256bb540d7649ddc1a';
+    r'70dfe98a2dd76ba7c8754724471c049201bc60d9';
 
 /// See also [textInputEventStream].
 @ProviderFor(textInputEventStream)
@@ -274,6 +276,8 @@ class TextInputEventStreamProvider extends FutureProvider<TextInputEventType> {
   }
 }
 
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
 mixin TextInputEventStreamRef on FutureProviderRef<TextInputEventType> {
   /// The parameter `viewId` of this provider.
   int get viewId;
@@ -289,7 +293,7 @@ class _TextInputEventStreamProviderElement
 }
 
 String _$windowMappedStreamHash() =>
-    r'406e042fd1cca4b6529cf742bdffe5b4ccdd8c1d';
+    r'02cb2bcc04157b37d4deac3bb7b131de8915221e';
 
 /// See also [WindowMappedStream].
 @ProviderFor(WindowMappedStream)
@@ -306,7 +310,7 @@ final windowMappedStreamProvider =
 
 typedef _$WindowMappedStream = StreamNotifier<int>;
 String _$windowUnmappedStreamHash() =>
-    r'27c0e325f702f372c2022ac085b09374437e50c1';
+    r'd1daaf5169d1c843996c6fa25f4d44b11be80814';
 
 /// See also [WindowUnmappedStream].
 @ProviderFor(WindowUnmappedStream)
@@ -322,7 +326,7 @@ final windowUnmappedStreamProvider =
 );
 
 typedef _$WindowUnmappedStream = StreamNotifier<int>;
-String _$platformApiHash() => r'f89b772c12337ae88bc05dbf6d7807c3e05efbd1';
+String _$platformApiHash() => r'00649155218d48cf31459f92d55745b5f7445b37';
 
 /// See also [PlatformApi].
 @ProviderFor(PlatformApi)
@@ -338,4 +342,4 @@ final platformApiProvider =
 
 typedef _$PlatformApi = Notifier<PlatformApiState>;
 // ignore_for_file: type=lint
-// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member
+// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

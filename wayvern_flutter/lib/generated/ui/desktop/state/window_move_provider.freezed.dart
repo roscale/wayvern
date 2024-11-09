@@ -12,7 +12,7 @@ part of '../../../../ui/desktop/state/window_move_provider.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$WindowMoveState {
@@ -21,7 +21,9 @@ mixin _$WindowMoveState {
   Offset get movedPosition => throw _privateConstructorUsedError;
   Offset get delta => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of WindowMoveState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $WindowMoveStateCopyWith<WindowMoveState> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -46,6 +48,8 @@ class _$WindowMoveStateCopyWithImpl<$Res, $Val extends WindowMoveState>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of WindowMoveState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -95,6 +99,8 @@ class __$$WindowMoveStateImplCopyWithImpl<$Res>
       _$WindowMoveStateImpl _value, $Res Function(_$WindowMoveStateImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of WindowMoveState
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -148,7 +154,7 @@ class _$WindowMoveStateImpl implements _WindowMoveState {
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$WindowMoveStateImpl &&
@@ -164,7 +170,9 @@ class _$WindowMoveStateImpl implements _WindowMoveState {
   int get hashCode =>
       Object.hash(runtimeType, moving, startPosition, movedPosition, delta);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of WindowMoveState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$WindowMoveStateImplCopyWith<_$WindowMoveStateImpl> get copyWith =>
@@ -187,8 +195,11 @@ abstract class _WindowMoveState implements WindowMoveState {
   Offset get movedPosition;
   @override
   Offset get delta;
+
+  /// Create a copy of WindowMoveState
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$WindowMoveStateImplCopyWith<_$WindowMoveStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
