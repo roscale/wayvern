@@ -22,7 +22,7 @@ use smithay::{
 use smithay::backend::input::{KeyState, Keycode};
 use smithay::input::keyboard::ModifiersState;
 use smithay::reexports::calloop::channel::Event::Msg;
-use smithay::reexports::calloop::Dispatcher;
+use smithay::reexports::calloop::{Dispatcher, LoopHandle};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use embedder_sys::{FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
 use embedder_sys::FlutterEngineOnVsync;
@@ -56,6 +56,7 @@ use platform_channels::method_channel::MethodChannel;
 use platform_channels::method_codec::MethodCodec;
 use platform_channels::method_result::MethodResult;
 use crate::flutter_engine::task_runner::TaskRunner;
+use crate::flutter_engine::text_input::TextInput;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 use crate::keyboard::glfw_key_codes::{get_glfw_keycode, get_glfw_modifiers};
 use crate::mouse_button_tracker::MouseButtonTracker;
@@ -64,6 +65,7 @@ mod callbacks;
 pub mod task_runner;
 pub mod wayland_messages;
 pub mod method_result_mpsc_channel;
+mod text_input;
 
 /// Wrap the handle for various safety reasons:
 /// - Clone & Copy is willingly not implemented to avoid using the engine after being shut down.
@@ -75,6 +77,7 @@ pub struct FlutterEngine {
     current_thread_id: std::thread::ThreadId,
     pub(crate) mouse_button_tracker: MouseButtonTracker,
     pub binary_messenger: Option<BinaryMessengerImpl>,
+    pub text_input: TextInput,
 }
 
 /// I don't want people to clone it because it's UB to call [FlutterEngine::on_vsync] multiple times
@@ -82,7 +85,7 @@ pub struct FlutterEngine {
 pub struct Baton(isize);
 
 impl FlutterEngine {
-    pub fn new<BackendData: Backend + 'static>(root_egl_context: &EGLContext, server_state: &ServerState<BackendData>) -> Result<(Box<Self>, EmbedderChannels), Box<dyn std::error::Error>> {
+    pub fn new<BackendData: Backend + 'static>(root_egl_context: &EGLContext, loop_handle: &LoopHandle<CalloopData<BackendData>>) -> Result<(Box<Self>, EmbedderChannels), Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
@@ -131,6 +134,7 @@ impl FlutterEngine {
             current_thread_id: std::thread::current().id(),
             mouse_button_tracker: MouseButtonTracker::new(),
             binary_messenger: None,
+            text_input: TextInput::new(),
         });
 
         let task_runner_description = FlutterTaskRunnerDescription {
@@ -235,9 +239,9 @@ impl FlutterEngine {
             TimeoutAction::ToDuration(duration)
         });
 
-        let task_runner_timer_registration_token = server_state.loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
+        let task_runner_timer_registration_token = loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
 
-        server_state.loop_handle.insert_source(rx_reschedule_task_runner_timer, move |event, _, data: &mut CalloopData<BackendData>| {
+        loop_handle.insert_source(rx_reschedule_task_runner_timer, move |event, _, data: &mut CalloopData<BackendData>| {
             if let Msg(duration) = event {
                 task_runner_timer_dispatcher.as_source_mut().set_duration(duration);
                 data.state.loop_handle.update(&task_runner_timer_registration_token).unwrap();

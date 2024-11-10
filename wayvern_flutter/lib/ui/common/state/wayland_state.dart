@@ -311,7 +311,7 @@ class WaylandProvider extends _$WaylandProvider {
           focusNode: focusNode,
           interactiveMoveRequested: Object(),
           interactiveResizeRequested: ResizeEdgeObject(ResizeEdge.top),
-          decoration: ToplevelDecoration.none,
+          decoration: ToplevelDecoration.serverSide,
           title: "",
           appId: "",
           tilingRequested: null,

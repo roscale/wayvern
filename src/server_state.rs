@@ -3,14 +3,15 @@ use std::env::{remove_var, set_var};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
-
+use input_linux::Key::Esc;
+use input_linux::sys::KEY_ESC;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::input::{ButtonState, KeyState, Keycode};
 use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::input::pointer::{ButtonEvent, MotionEvent, PointerHandle};
 use smithay::input::{Seat, SeatState};
-use smithay::input::keyboard::KeyboardHandle;
+use smithay::input::keyboard::{KeyboardHandle, Keysym};
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
@@ -28,7 +29,7 @@ use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::backends::Backend;
 use platform_channels::encodable_value::EncodableValue;
@@ -51,13 +52,13 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
-    pub dmabuf_state: Option<DmabufState>,
+    pub dmabuf_state: DmabufState,
     pub pointer: PointerHandle<ServerState<BackendData>>,
     pub keyboard: KeyboardHandle<ServerState<BackendData>>,
 
     pub backend_data: Box<BackendData>,
 
-    pub flutter_engine: Option<Box<FlutterEngine>>,
+    pub flutter_engine: Box<FlutterEngine>,
     pub tx_platform_message: Option<Sender<(MethodCall, Box<dyn MethodResult>)>>,
 
     pub tx_flutter_handled_key_events: Sender<(KeyEvent, bool)>,
@@ -70,8 +71,8 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub is_next_vblank_scheduled: bool,
 
     pub imported_dmabufs: Vec<Dmabuf>,
-    pub gles_renderer: Option<GlesRenderer>,
-    pub gl: Option<Gles2>,
+    pub gles_renderer: GlesRenderer,
+    pub gl: Gles2,
     pub surfaces: HashMap<u64, WlSurface>,
     pub xdg_toplevels: HashMap<u64, ToplevelSurface>,
     pub xdg_popups: HashMap<u64, PopupSurface>,
@@ -85,7 +86,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         display: Display<ServerState<BackendData>>,
         loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
-        dmabuf_state: Option<DmabufState>,
+        dmabuf_state: DmabufState,
+        flutter_engine: Box<FlutterEngine>,
+        gles_renderer: GlesRenderer,
+        gl: Gles2,
     ) -> ServerState<BackendData> {
         let display_handle = display.handle();
         let clock = Clock::new();
@@ -158,7 +162,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             compositor_state,
             xdg_shell_state,
             shm_state,
-            flutter_engine: None,
+            flutter_engine,
             dmabuf_state,
             seat,
             seat_state,
@@ -168,8 +172,8 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             next_view_id: 1,
             next_texture_id: 1,
             imported_dmabufs: Vec::new(),
-            gles_renderer: None,
-            gl: None,
+            gles_renderer,
+            gl,
             surfaces: HashMap::new(),
             xdg_toplevels: HashMap::new(),
             xdg_popups: HashMap::new(),
@@ -289,6 +293,20 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
                     if handled {
                         // Flutter consumed this event. Probably a keyboard shortcut.
+                        return;
+                    }
+
+                    let text_input = &mut data.state.flutter_engine.text_input;
+
+                    if text_input.is_active() {
+                        if key_event.state == KeyState::Pressed
+                            && !key_event.mods.ctrl
+                            && !key_event.mods.alt
+                        {
+                            // text_input.press_key(key_event.key_code.raw(), key_event.codepoint);
+                        }
+                        // It doesn't matter if the text field captured the key event or not.
+                        // As long as it stays active, don't forward events to the Wayland client.
                         return;
                     }
 
@@ -420,6 +438,12 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
     pub fn handle_key_event(&mut self, key_code: Keycode, state: KeyState) {
         let keyboard = self.keyboard.clone();
 
+        print!("Key event: {:?} {:?}", key_code, state);
+        if state == KeyState::Pressed && key_code.raw() as i32 == 9 {
+            self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
+        
         // Update the keyboard state without forwarding the event to the client.
         let ((mods, keysym), mods_changed) =
             keyboard.input_intercept::<_, _>(self, key_code, state, |_, mods, keysym_handle| {
@@ -446,10 +470,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
 impl<BackendData: Backend + 'static> ServerState<BackendData> {
     pub fn flutter_engine(&self) -> &FlutterEngine {
-        self.flutter_engine.as_ref().unwrap()
+        self.flutter_engine.as_ref()
     }
     pub fn flutter_engine_mut(&mut self) -> &mut FlutterEngine {
-        self.flutter_engine.as_mut().unwrap()
+        self.flutter_engine.as_mut()
     }
 }
 

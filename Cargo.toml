@@ -9,7 +9,7 @@ members = ["src/flutter_engine/embedder_sys", "src/flutter_engine/platform_chann
 ]
 
 [dependencies]
-smithay = { git = "https://github.com/Smithay/smithay", rev = "5e137dc", features = ["default", "wayland_frontend", "backend_egl", "use_system_lib", "backend_vulkan"] }
+smithay = { git = "https://github.com/Smithay/smithay", rev = "5e137dc", features = ["default", "wayland_frontend", "backend_egl", "use_system_lib"] }
 smithay-drm-extras = { path = "third_party/smithay-drm-extras" }
 rustix = "0.38.39"
 input-linux = "0.7.1"

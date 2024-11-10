@@ -30,6 +30,8 @@ use crate::server_state::ServerState;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
+    let loop_handle = event_loop.handle();
+    
     let display: Display<ServerState<X11Data>> = Display::new().unwrap();
     let mut display_handle = display.handle();
 
@@ -126,27 +128,12 @@ pub fn run_x11_client() {
     let _dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
+    
     let dmabuf_state = DmabufState::new();
     // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
     //     &display.handle(),
     //     &dmabuf_default_feedback,
     // );
-
-    let mut state = ServerState::new(
-        display,
-        event_loop.handle(),
-        X11Data {
-            x11_surface,
-            mode: Mode {
-                size: {
-                    let s = window.size();
-                    (s.w as i32, s.h as i32).into()
-                },
-                refresh: 144_000,
-            },
-        },
-        Some(dmabuf_state),
-    );
 
     let (
         flutter_engine,
@@ -159,10 +146,30 @@ pub fn run_x11_client() {
             rx_request_external_texture_name,
             tx_external_texture_name,
         },
-    ) = FlutterEngine::new(&egl_context, &state).unwrap();
+    ) = FlutterEngine::new(&egl_context, &loop_handle).unwrap();
 
-    state.flutter_engine = Some(flutter_engine);
-
+    let gles_renderer = unsafe { GlesRenderer::new(egl_context) }.expect("Failed to initialize GLES");
+    let gl = Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _);
+    
+    let mut state = ServerState::new(
+        display,
+        loop_handle,
+        X11Data {
+            x11_surface,
+            mode: Mode {
+                size: {
+                    let s = window.size();
+                    (s.w as i32, s.h as i32).into()
+                },
+                refresh: 144_000,
+            },
+        },
+        dmabuf_state,
+        flutter_engine,
+        gles_renderer,
+        gl,
+    );
+    
     let codec = Rc::new(StandardMethodCodec::new());
 
     let tx_platform_message = state.tx_platform_message.take().unwrap();
@@ -188,12 +195,7 @@ pub fn run_x11_client() {
     ]);
 
     let mut baton = None;
-
-    let gles_renderer = unsafe { GlesRenderer::new(egl_context) }.expect("Failed to initialize GLES");
-
-    state.gles_renderer = Some(gles_renderer);
-    state.gl = Some(Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _));
-
+    
     event_loop
         .handle()
         .insert_source(x11_backend, move |event, _, data: &mut CalloopData<X11Data>| match event {

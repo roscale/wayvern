@@ -87,13 +87,13 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 .as_ref()
                 .and_then(|assignment| match assignment {
                     BufferAssignment::NewBuffer(buffer) => {
-                        self.gles_renderer.as_mut().unwrap().import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
+                        self.gles_renderer.import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
                     }
                     _ => None,
                 });
 
             let (texture_id, size) = if let Some(texture) = texture {
-                unsafe { self.gl.as_ref().unwrap().Finish(); }
+                unsafe { self.gl.Finish(); }
 
                 let size = texture.size();
 

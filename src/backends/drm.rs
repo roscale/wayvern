@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::io;
+use std::io::Write;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
+use std::process::exit;
 use std::sync::atomic::Ordering;
 use rustix::fs::OFlags;
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
@@ -14,7 +17,7 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::gles::ffi::Gles2;
+use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::session::{libseat, Session};
 use smithay::backend::session::libseat::LibSeatSession;
@@ -22,7 +25,8 @@ use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::channel::Event;
-use smithay::reexports::calloop::{EventLoop, RegistrationToken};
+use smithay::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
+use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags};
 use smithay::reexports::drm::Device as _;
 use smithay::reexports::input::Libinput;
@@ -36,7 +40,7 @@ use tracing::{error, info, warn};
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use crate::backends::Backend;
-use crate::CalloopData;
+use crate::{send_frames_surface_tree, CalloopData};
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::input_handling::handle_input;
 use crate::server_state::ServerState;
@@ -81,6 +85,8 @@ const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8
 
 pub fn run_drm_backend() {
     let mut event_loop = EventLoop::try_new().unwrap();
+    let loop_handle = event_loop.handle();
+
     let display: Display<ServerState<DrmBackend>> = Display::new().unwrap();
     let mut display_handle = display.handle();
 
@@ -97,7 +103,7 @@ pub fn run_drm_backend() {
     } else {
         primary_gpu(session.seat())
             .unwrap()
-            .and_then(|x| DrmNode::from_path(x).ok()?.node_with_type(NodeType::Primary)?.ok())
+            .and_then(|x| DrmNode::from_path(x).ok()?.node_with_type(NodeType::Render)?.ok())
             .unwrap_or_else(|| {
                 all_gpus(session.seat())
                     .unwrap()
@@ -122,23 +128,25 @@ pub fn run_drm_backend() {
     libinput_context.udev_assign_seat(&session.seat()).unwrap();
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
-    let mut state = ServerState::new(
-        display,
-        event_loop.handle(),
-        DrmBackend {
-            session,
-            gpus: HashMap::new(),
-            primary_gpu,
-            pointer_images: vec![],
-            pointer_image: crate::cursor::Cursor::load(),
-        },
-        None,
-    );
+    let (device_id, path) = udev_backend.device_list().next().unwrap();
+    let node = DrmNode::from_dev_id(device_id).unwrap();
+
+    let mut backend_data = DrmBackend {
+        session,
+        gpus: HashMap::new(),
+        primary_gpu: node,
+        pointer_images: vec![],
+        pointer_image: crate::cursor::Cursor::load(),
+    };
 
     // Initialize GPU state.
-    state.gpu_added(primary_gpu, &primary_gpu.dev_path().unwrap()).unwrap();
+    let (gles_renderer, gl) = add_gpu(
+        &loop_handle,
+        &mut backend_data,
+        node,
+        path
+    ).unwrap();
 
-    let gles_renderer = state.gles_renderer.as_ref().unwrap();
     let egl_context = gles_renderer.egl_context();
 
     let dmabuf_formats = egl_context.dmabuf_texture_formats()
@@ -149,12 +157,10 @@ pub fn run_drm_backend() {
         .build()
         .unwrap();
     let mut dmabuf_state = DmabufState::new();
-    let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<DrmBackend>>(
-        &display_handle,
-        &dmabuf_default_feedback,
-    );
-
-    state.dmabuf_state = Some(dmabuf_state);
+    // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<DrmBackend>>(
+    //     &display_handle,
+    //     &dmabuf_default_feedback,
+    // );
 
     // Start the Flutter engine.
     let (
@@ -165,17 +171,25 @@ pub fn run_drm_backend() {
             mut tx_fbo,
             tx_output_height: _,
             rx_baton,
-            rx_request_external_texture_name: _,
-            tx_external_texture_name: _,
+            rx_request_external_texture_name,
+            tx_external_texture_name,
         },
-    ) = FlutterEngine::new(egl_context, &state).unwrap();
+    ) = FlutterEngine::new(egl_context, &loop_handle).unwrap();
 
-    state.flutter_engine = Some(flutter_engine);
+    let mut state = ServerState::new(
+        display,
+        event_loop.handle(),
+        backend_data,
+        dmabuf_state,
+        flutter_engine,
+        gles_renderer,
+        gl,
+    );
 
     let mut baton = None;
 
     // Initialize already present connectors.
-    state.device_changed(primary_gpu);
+    state.device_changed(node);
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -214,7 +228,7 @@ pub fn run_drm_backend() {
         wl_shm::Format::Xrgb8888,
     ]);
 
-    event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
+    loop_handle.insert_source(rx_baton, move |baton, _, data| {
         if let Event::Msg(baton) = baton {
             data.baton = Some(baton);
         }
@@ -226,7 +240,7 @@ pub fn run_drm_backend() {
         }
     }).unwrap();
 
-    event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
+    loop_handle.insert_source(rx_request_fbo, move |_, _, data| {
         let gpu_data = data.state.backend_data.get_gpu_data_mut();
         let slot = gpu_data.swapchain.acquire().ok().flatten().unwrap();
         let dmabuf = slot.export().unwrap();
@@ -234,11 +248,25 @@ pub fn run_drm_backend() {
         data.tx_fbo.send(Some(dmabuf)).unwrap();
     }).unwrap();
 
-    event_loop.handle().insert_source(rx_present, move |_, _, data| {
+    loop_handle.insert_source(rx_present, move |_, _, data| {
         let gpu_data = data.state.backend_data.get_gpu_data_mut();
         gpu_data.last_rendered_slot = gpu_data.current_slot.take();
         data.state.update_crtc_planes();
         data.state.is_next_vblank_scheduled = true;
+    }).unwrap();
+
+    event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
+        if let Msg(texture_id) = event {
+            let texture_swap_chain = data.state.texture_swapchains.get_mut(&texture_id);
+            let texture_id = match texture_swap_chain {
+                Some(texture) => {
+                    let texture = texture.start_read();
+                    texture.tex_id()
+                }
+                None => 0,
+            };
+            let _ = tx_external_texture_name.send((texture_id, RGBA8));
+        }
     }).unwrap();
 
     while state.running.load(Ordering::SeqCst) {
@@ -277,7 +305,7 @@ impl ServerState<DrmBackend> {
         };
 
         let (gles_renderer, surface, last_rendered_slot, swapchain) = (
-            self.gles_renderer.as_mut().unwrap(),
+            &mut self.gles_renderer,
             if let Some(surface) = gpu_data.surfaces.values_mut().next() {
                 surface
             } else {
@@ -349,7 +377,7 @@ impl ServerState<DrmBackend> {
 
         surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(
             gles_renderer,
-            &[flutter_texture_element, cursor_element],
+            &[cursor_element, flutter_texture_element],
             [0.0, 0.0, 0.0, 0.0],
         ).unwrap();
         surface.compositor.queue_frame(None).unwrap();
@@ -389,88 +417,6 @@ enum DeviceAddError {
 }
 
 impl ServerState<DrmBackend> {
-    fn gpu_added(&mut self, node: DrmNode, path: &Path) -> Result<(), DeviceAddError> {
-        // Try to open the device
-        let fd = self
-            .backend_data
-            .session
-            .open(
-                path,
-                OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
-            )
-            .map_err(DeviceAddError::DeviceOpen)?;
-
-        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd.as_raw_fd()) });
-        let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
-
-        let registration_token = self
-            .loop_handle
-            .insert_source(
-                notifier,
-                move |event, _metadata, data: &mut CalloopData<_>| match event {
-                    DrmEvent::VBlank(crtc) => {
-                        data.state.is_next_vblank_scheduled = false;
-                        if let Some(surface) = data.state.backend_data.gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
-                            let _ = surface.compositor.frame_submitted();
-                        }
-                        if let Some(baton) = data.baton.take() {
-                            data.state.flutter_engine().on_vsync(baton).unwrap();
-                        }
-                    }
-                    DrmEvent::Error(error) => {
-                        error!("{:?}", error);
-                    }
-                },
-            )
-            .unwrap();
-
-        let gbm_device = GbmDevice::new(fd.clone()).map_err(DeviceAddError::GbmDevice)?;
-        let egl_display = unsafe { EGLDisplay::new(gbm_device.clone()) }.expect("Failed to create EGLDisplay");
-        let render_node = EGLDevice::device_for_display(&egl_display)
-            .ok()
-            .and_then(|x| x.try_get_render_node().ok().flatten())
-            .unwrap_or(node);
-
-        let gbm_allocator = GbmAllocator::new(
-            gbm_device.clone(),
-            GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
-        );
-
-        let gles_renderer = unsafe { GlesRenderer::new(EGLContext::new(&egl_display).unwrap()) }.unwrap();
-
-        let swapchain = {
-            let dmabuf_allocator: Box<dyn Allocator<Buffer=Dmabuf, Error=AnyError>> = {
-                let gbm_allocator = GbmAllocator::new(gbm_device.clone(), GbmBufferFlags::RENDERING);
-                Box::new(DmabufAllocator(gbm_allocator))
-            };
-            let modifiers = gles_renderer.egl_context().dmabuf_texture_formats().iter().map(|format| format.modifier).collect::<Vec<_>>();
-            Swapchain::new(dmabuf_allocator, 0, 0, Fourcc::Argb8888, modifiers)
-        };
-
-        self.gles_renderer = Some(gles_renderer);
-        self.gl = Some(Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _));
-
-        self.backend_data.gpus.insert(
-            node,
-            GpuData {
-                registration_token,
-                gbm_device,
-                gbm_allocator,
-                drm_device: drm,
-                drm_scanner: DrmScanner::new(),
-                non_desktop_connectors: Vec::new(),
-                render_node,
-                surfaces: HashMap::new(),
-                active_leases: Vec::new(),
-                swapchain,
-                current_slot: None,
-                last_rendered_slot: None,
-            },
-        );
-
-        Ok(())
-    }
-
     fn connector_connected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
         let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
             device
@@ -546,7 +492,7 @@ impl ServerState<DrmBackend> {
             SUPPORTED_FORMATS
         };
 
-        let render_formats = self.gles_renderer.as_ref().unwrap().egl_context().dmabuf_render_formats().clone();
+        let render_formats = self.gles_renderer.egl_context().dmabuf_render_formats().clone();
 
         let driver = match device.drm_device.get_driver() {
             Ok(driver) => driver,
@@ -599,7 +545,7 @@ impl ServerState<DrmBackend> {
         surface
             .compositor
             .render_frame::<_, TextureRenderElement<_>>(
-                self.gles_renderer.as_mut().unwrap(),
+                &mut self.gles_renderer,
                 &[],
                 [0.0, 0.0, 0.0, 0.0])
             .unwrap();
@@ -637,8 +583,16 @@ impl ServerState<DrmBackend> {
             return;
         };
 
-        if let Ok(result) = device.drm_scanner.scan_connectors(&device.drm_device) {
+        println!("Device changed: {:?}", node);
+
+        let a = device.drm_scanner.scan_connectors(&device.drm_device);
+
+        println!("Scanned connectors: {:?}", a);
+
+        if let Ok(result) = a {
+            println!("Scanned connectors aaaa: {:?}", result);
             for event in result {
+                println!("Event: {:?}", event);
                 match event {
                     DrmScanEvent::Connected { connector, crtc } => self.connector_connected(node, connector, crtc.unwrap()),
                     DrmScanEvent::Disconnected { connector, crtc } => self.connector_disconnected(node, connector, crtc.unwrap()),
@@ -646,6 +600,100 @@ impl ServerState<DrmBackend> {
             }
         }
     }
+}
+
+pub fn add_gpu(
+    loop_handle: &LoopHandle<CalloopData<DrmBackend>>,
+    drm_backend: &mut DrmBackend,
+    node: DrmNode,
+    path: &Path,
+) -> Result<(GlesRenderer, Gles2), DeviceAddError> {
+    dbg!(path);
+
+    // Try to open the device
+    let fd = drm_backend
+        .session
+        .open(
+            path,
+            OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
+        )
+        .map_err(DeviceAddError::DeviceOpen)?;
+
+    let fd = DrmDeviceFd::new(DeviceFd::from(fd));
+    let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
+    let gbm_device = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
+
+    let registration_token = loop_handle
+        .insert_source(
+            notifier,
+            move |event, _metadata, data: &mut CalloopData<_>| match event {
+                DrmEvent::VBlank(crtc) => {
+                    data.state.is_next_vblank_scheduled = false;
+                    if let Some(surface) = data.state.backend_data.gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
+                        let _ = surface.compositor.frame_submitted();
+                    }
+                    if let Some(baton) = data.baton.take() {
+                        data.state.flutter_engine().on_vsync(baton).unwrap();
+                    }
+
+                    let start_time = std::time::Instant::now();
+                    for surface in data.state.xdg_shell_state.toplevel_surfaces() {
+                        send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+                    }
+                    for surface in data.state.xdg_popups.values() {
+                        send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+                    }
+                }
+                DrmEvent::Error(error) => {
+                    error!("{:?}", error);
+                }
+            },
+        )
+        .unwrap();
+
+    let egl_display = unsafe { EGLDisplay::new(gbm_device.clone()) }.expect("Failed to create EGLDisplay");
+    let render_node = EGLDevice::device_for_display(&egl_display)
+        .ok()
+        .and_then(|x| x.try_get_render_node().ok().flatten())
+        .unwrap_or(node);
+
+    let gbm_allocator = GbmAllocator::new(
+        gbm_device.clone(),
+        GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
+    );
+
+    let gles_renderer = unsafe { GlesRenderer::new(EGLContext::new(&egl_display).unwrap()) }.unwrap();
+
+    let swapchain = {
+        let dmabuf_allocator: Box<dyn Allocator<Buffer=Dmabuf, Error=AnyError>> = {
+            let gbm_allocator = GbmAllocator::new(gbm_device.clone(), GbmBufferFlags::RENDERING);
+            Box::new(DmabufAllocator(gbm_allocator))
+        };
+        let modifiers = gles_renderer.egl_context().dmabuf_texture_formats().iter().map(|format| format.modifier).collect::<Vec<_>>();
+        Swapchain::new(dmabuf_allocator, 0, 0, Fourcc::Argb8888, modifiers)
+    };
+
+    let gl = Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _);
+
+    drm_backend.gpus.insert(
+        node,
+        GpuData {
+            registration_token,
+            gbm_device,
+            gbm_allocator,
+            drm_device: drm,
+            drm_scanner: DrmScanner::new(),
+            non_desktop_connectors: Vec::new(),
+            render_node,
+            surfaces: HashMap::new(),
+            active_leases: Vec::new(),
+            swapchain,
+            current_slot: None,
+            last_rendered_slot: None,
+        },
+    );
+
+    Ok((gles_renderer, gl))
 }
 
 #[allow(dead_code)]

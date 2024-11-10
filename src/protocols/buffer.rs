@@ -22,7 +22,7 @@ impl<BackendData: Backend> ShmHandler for ServerState<BackendData> {
 
 impl<BackendData: Backend> DmabufHandler for ServerState<BackendData> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        self.dmabuf_state.as_mut().unwrap()
+        &mut self.dmabuf_state
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf, notifier: ImportNotifier) {
