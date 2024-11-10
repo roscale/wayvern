@@ -1072,6 +1072,7 @@ version = "0.1.0"
 dependencies = [
  "embedder_sys",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

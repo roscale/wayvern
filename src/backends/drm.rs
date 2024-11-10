@@ -309,7 +309,7 @@ impl ServerState<DrmBackend> {
 
         let pointer_frame = self.backend_data
             .pointer_image
-            .get_image(1, self.clock.now().try_into().unwrap());
+            .get_image(1, self.clock.now().into());
 
         let cursor_position = Point::from(self.mouse_position) - Point::from((pointer_frame.xhot as f64, pointer_frame.yhot as f64));
 

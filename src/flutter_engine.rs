@@ -5,7 +5,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::time::Duration;
-
+use serde_json::json;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
@@ -19,23 +19,23 @@ use smithay::{
     reexports::calloop::channel,
     utils::{Physical, Size},
 };
+use smithay::backend::input::{KeyState, Keycode};
+use smithay::input::keyboard::ModifiersState;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::Dispatcher;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use embedder_sys::{
-    FlutterEngine as FlutterEngineHandle,
-    FlutterEngineGetCurrentTime,
-    FlutterEngineOnVsync,
-    FlutterEngineRun,
-    FlutterEngineSendWindowMetricsEvent,
-    FlutterEngineShutdown,
-    FlutterOpenGLRendererConfig,
-    FlutterProjectArgs,
-    FlutterRendererConfig,
-    FlutterRendererConfig__bindgen_ty_1,
-    FlutterWindowMetricsEvent,
-    FLUTTER_ENGINE_VERSION,
-};
+use embedder_sys::{FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
+use embedder_sys::FlutterEngineOnVsync;
+use embedder_sys::FlutterEngineGetCurrentTime;
+use embedder_sys::FlutterEngine as FlutterEngineHandle;
+use embedder_sys::FlutterEngineSendWindowMetricsEvent;
+use embedder_sys::FlutterEngineShutdown;
+use embedder_sys::FlutterOpenGLRendererConfig;
+use embedder_sys::FlutterProjectArgs;
+use embedder_sys::FlutterRendererConfig;
+use embedder_sys::FlutterRendererConfig__bindgen_ty_1;
+use embedder_sys::FlutterWindowMetricsEvent;
+use embedder_sys::FLUTTER_ENGINE_VERSION;
 use crate::{flutter_engine::callbacks::{
     clear_current,
     fbo_callback,
@@ -47,12 +47,17 @@ use crate::{flutter_engine::callbacks::{
 use crate::backends::Backend;
 use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
 use embedder_sys::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
+use platform_channels::basic_message_channel::BasicMessageChannel;
+use platform_channels::binary_messenger::BinaryReply;
 use platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+use platform_channels::json_message_codec::JsonMessageCodec;
+use platform_channels::message_codec::MessageCodec;
 use platform_channels::method_channel::MethodChannel;
 use platform_channels::method_codec::MethodCodec;
 use platform_channels::method_result::MethodResult;
 use crate::flutter_engine::task_runner::TaskRunner;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
+use crate::keyboard::glfw_key_codes::{get_glfw_keycode, get_glfw_modifiers};
 use crate::mouse_button_tracker::MouseButtonTracker;
 
 mod callbacks;
@@ -248,7 +253,7 @@ impl FlutterEngine {
         unsafe { FlutterEngineGetCurrentTime() }
     }
 
-    pub fn current_time_ms() -> u64 {
+    pub fn current_time_us() -> u64 {
         unsafe { FlutterEngineGetCurrentTime() / 1000 }
     }
 
@@ -292,6 +297,92 @@ impl FlutterEngine {
         Ok(())
     }
 
+    pub fn send_key_event(&mut self, key_event: KeyEvent, handled_channel: channel::Sender<(KeyEvent, bool)>) -> Result<(), Box<dyn std::error::Error>> {
+        let codec = JsonMessageCodec::new();
+
+        let physical = key_event.key_code.raw() + 8;
+        let logical = get_glfw_keycode(key_event.key_code.raw());
+
+        let character = key_event.codepoint.map(|c| CString::new(c.to_string()).unwrap());
+
+        // https://api.flutter.dev/flutter/services/KeyEventManager-class.html
+        unsafe {
+            FlutterEngineSendKeyEvent(
+                self.handle,
+                &FlutterKeyEvent {
+                    struct_size: size_of::<FlutterKeyEvent>(),
+                    timestamp: FlutterEngine::current_time_us() as f64,
+                    type_: if key_event.state == KeyState::Pressed {
+                        FlutterKeyEventType_kFlutterKeyEventTypeDown
+                    } else {
+                        FlutterKeyEventType_kFlutterKeyEventTypeUp
+                    },
+                    physical: physical as u64,
+                    logical: logical as u64,
+                    character: character.map(|c| c.as_ptr()).unwrap_or(null()),
+                    synthesized: false,
+                } as *const _,
+                None,
+                null_mut(),
+            );
+        };
+
+        self.send_message(
+            codec,
+            "flutter/keyevent",
+            json!({
+                "keymap": "linux",
+                "toolkit": "glfw",
+                "keyCode": logical,
+                "specifiedLogicalKey": key_event.specified_logical_key,
+                "scanCode": physical,
+                "modifiers": get_glfw_modifiers(key_event.mods),
+                "unicodeScalarValues": key_event.codepoint.map(|c| c as u32),
+                "type": if key_event.state == KeyState::Pressed { "keydown" } else { "keyup" },
+            }),
+            Some(Box::new(move |response: Option<&[u8]>| {
+                // This is the callback that will be called when Flutter replies.
+                // Flutter always replies with a single `handled` boolean.
+                // If its value is true, some widget listening to keyboard shortcuts probably handled this event.
+
+                let response = match response {
+                    Some(response) => response,
+                    None => return,
+                };
+
+                let message = codec.decode_message(response).unwrap();
+                let handled = message["handled"].as_bool().unwrap();
+
+                // We would normally call `keyboard.input_forward` here to forward the event to a Wayland client,
+                // but we need `data` and we can't just capture it by reference.
+                // Send key event info and Flutter's response over an MPSC channel.
+                // The receiver `rx_flutter_handled_key_event` is registered to the event loop with a callback
+                // that will continue processing the event.
+                // This callback is defined in the constructor of `ServerState`.
+                handled_channel.send((key_event, handled)).unwrap();
+            })),
+        );
+
+        // let result = unsafe {
+        //     FlutterEngineSendKeyEvent(
+        //         self.handle,
+        //         &event as *const _,
+        //         Some(Self::flutter_key_event_callback),
+        //         &tx as *const _ as *mut c_void,
+        //     )
+        // };
+        //
+        // if result != 0 {
+        //     return Err(format!("Could not send key event, error {result}").into());
+        // }
+
+
+        // Also send on `flutter/keyevent`.
+
+
+        Ok(())
+    }
+
     pub fn register_external_texture(&self, texture_id: i64) -> Result<(), Box<dyn std::error::Error>> {
         let result = unsafe { FlutterEngineRegisterExternalTexture(self.handle, texture_id) };
         if result != 0 {
@@ -323,6 +414,22 @@ impl FlutterEngine {
             codec,
         );
         method_channel.invoke_method(method, arguments, result);
+    }
+
+    pub fn send_message<T: 'static, C: MessageCodec<T> + 'static>(
+        &mut self,
+        codec: C,
+        channel_name: &str,
+        message: T,
+        reply: BinaryReply,
+    ) {
+        let codec = Rc::new(codec);
+        let mut basic_message_channel = BasicMessageChannel::new(
+            self.binary_messenger.as_mut().unwrap(),
+            channel_name.to_string(),
+            codec,
+        );
+        basic_message_channel.send(&message, reply);
     }
 }
 
@@ -390,4 +497,15 @@ pub struct EmbedderChannels {
     pub rx_baton: channel::Channel<Baton>,
     pub rx_request_external_texture_name: channel::Channel<i64>,
     pub tx_external_texture_name: channel::Sender<(u32, u32)>,
+}
+
+#[derive(Copy, Clone)]
+pub struct KeyEvent {
+    pub key_code: Keycode,
+    pub specified_logical_key: Option<u32>,
+    pub codepoint: Option<char>,
+    pub state: KeyState,
+    pub time: u32,
+    pub mods: ModifiersState,
+    pub mods_changed: bool,
 }

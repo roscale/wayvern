@@ -5,15 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::input::ButtonState;
+use smithay::backend::input::{ButtonState, KeyState, Keycode};
 use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::input::pointer::{ButtonEvent, MotionEvent, PointerHandle};
 use smithay::input::{Seat, SeatState};
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
-use smithay::reexports::calloop::channel::Channel;
+use smithay::reexports::calloop::channel::{Channel, Sender};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Display;
@@ -33,7 +34,7 @@ use crate::backends::Backend;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::method_call::MethodCall;
 use platform_channels::method_result::MethodResult;
-use crate::flutter_engine::FlutterEngine;
+use crate::flutter_engine::{FlutterEngine, KeyEvent};
 use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;
 use crate::{CalloopData, ClientState};
@@ -52,11 +53,15 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub shm_state: ShmState,
     pub dmabuf_state: Option<DmabufState>,
     pub pointer: PointerHandle<ServerState<BackendData>>,
+    pub keyboard: KeyboardHandle<ServerState<BackendData>>,
 
     pub backend_data: Box<BackendData>,
 
     pub flutter_engine: Option<Box<FlutterEngine>>,
-    pub tx_platform_message: Option<channel::Sender<(MethodCall, Box<dyn MethodResult>)>>,
+    pub tx_platform_message: Option<Sender<(MethodCall, Box<dyn MethodResult>)>>,
+
+    pub tx_flutter_handled_key_events: Sender<(KeyEvent, bool)>,
+
     next_view_id: u64,
     next_texture_id: i64,
 
@@ -92,7 +97,8 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let mut seat_state = SeatState::new();
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
-        seat.add_keyboard(Default::default(), 200, 200).unwrap();
+
+        let keyboard = seat.add_keyboard(Default::default(), 200, 25).unwrap();
         let pointer = seat.add_pointer();
 
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
@@ -136,6 +142,10 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
 
         Self::register_platform_message_handler(&loop_handle, rx_platform_message);
 
+        let (tx_flutter_handled_key_events, rx_flutter_handled_key_events) = channel::channel::<(KeyEvent, bool)>();
+
+        Self::register_flutter_handled_key_events_handler(&loop_handle, rx_flutter_handled_key_events);
+
         Self {
             running: Arc::new(AtomicBool::new(true)),
             display_handle,
@@ -154,6 +164,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             seat_state,
             data_device_state,
             pointer,
+            keyboard,
             next_view_id: 1,
             next_texture_id: 1,
             imported_dmabufs: Vec::new(),
@@ -166,6 +177,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             view_id_per_texture_id: HashMap::new(),
             texture_swapchains: HashMap::new(),
             tx_platform_message: Some(tx_platform_message),
+            tx_flutter_handled_key_events,
         }
     }
 
@@ -258,6 +270,40 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                             result.success(None);
                         }
                     }
+                },
+            )
+            .expect("Failed to init wayland server source");
+    }
+
+    fn register_flutter_handled_key_events_handler(
+        loop_handle: &LoopHandle<CalloopData<BackendData>>,
+        rx_flutter_handled_key_events: Channel<(KeyEvent, bool)>,
+    ) {
+        loop_handle
+            .insert_source(
+                rx_flutter_handled_key_events,
+                |event, (), data| {
+                    let Msg((key_event, handled)) = event else {
+                        return;
+                    };
+
+                    if handled {
+                        // Flutter consumed this event. Probably a keyboard shortcut.
+                        return;
+                    }
+
+                    // The compositor was not interested in this event,
+                    // so we forward it to the Wayland client in focus
+                    // if there is one.
+                    let keyboard = data.state.keyboard.clone();
+                    keyboard.input_forward(
+                        &mut data.state,
+                        key_event.key_code,
+                        key_event.state,
+                        SERIAL_COUNTER.next_serial(),
+                        key_event.time,
+                        key_event.mods_changed,
+                    );
                 },
             )
             .expect("Failed to init wayland server source");
@@ -367,6 +413,34 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let texture_id = self.next_texture_id;
         self.next_texture_id += 1;
         texture_id
+    }
+}
+
+impl<BackendData: Backend + 'static> ServerState<BackendData> {
+    pub fn handle_key_event(&mut self, key_code: Keycode, state: KeyState) {
+        let keyboard = self.keyboard.clone();
+
+        // Update the keyboard state without forwarding the event to the client.
+        let ((mods, keysym), mods_changed) =
+            keyboard.input_intercept::<_, _>(self, key_code, state, |_, mods, keysym_handle| {
+                (*mods, keysym_handle.modified_sym())
+            });
+
+        let now_ms = self.now_ms();
+        let tx = self.tx_flutter_handled_key_events.clone();
+
+        self.flutter_engine_mut().send_key_event(
+            KeyEvent {
+                key_code,
+                specified_logical_key: None,
+                codepoint: keysym.key_char(),
+                state,
+                time: now_ms,
+                mods,
+                mods_changed,
+            },
+            tx,
+        ).unwrap();
     }
 }
 

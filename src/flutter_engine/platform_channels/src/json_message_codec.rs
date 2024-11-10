@@ -1,6 +1,6 @@
 use crate::message_codec::MessageCodec;
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct JsonMessageCodec {}
 
 impl JsonMessageCodec {

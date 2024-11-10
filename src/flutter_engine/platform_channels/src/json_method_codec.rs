@@ -8,7 +8,7 @@ use crate::method_result::MethodResult;
 const K_MESSAGE_METHOD_KEY: &str = "method";
 const K_MESSAGE_ARGUMENTS_KEY: &str = "args";
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct JsonMethodCodec {}
 
 impl JsonMethodCodec {

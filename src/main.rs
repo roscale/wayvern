@@ -30,6 +30,7 @@ mod server_state;
 mod texture_swap_chain;
 mod protocols;
 mod backends;
+mod keyboard;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
