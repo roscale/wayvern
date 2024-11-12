@@ -1,15 +1,14 @@
 //! https://api.flutter.dev/flutter/services/SystemChannels/textInput-constant.html
 
+use crate::server_state::Common;
 use input_linux::sys::KEY_ENTER;
-use serde_json::{json, Value};
-use smithay::reexports::calloop::channel::Event;
 use platform_channels::method_call::MethodCall;
 use platform_channels::method_channel::MethodChannel;
 use platform_channels::method_result::MethodResult;
 use platform_channels::text_imput_model::TextInputModel;
 use platform_channels::text_range::TextRange;
-use crate::backends::Backend;
-use crate::server_state::ServerState;
+use serde_json::{json, Value};
+use smithay::reexports::calloop::channel::Event;
 
 #[derive(Default)]
 pub struct TextInput {
@@ -106,13 +105,13 @@ impl TextInput {
     }
 }
 
-pub fn text_input_channel_method_call_handler<BackendData: Backend + 'static>(
+pub fn text_input_channel_method_call_handler(
     event: Event<(
         MethodCall<Value>,
         Box<dyn MethodResult<Value>>,
     )>,
     _: &mut (),
-    data: &mut ServerState<BackendData>,
+    data: &mut Common,
 ) {
     let text_input = &mut data.flutter_engine.text_input;
 

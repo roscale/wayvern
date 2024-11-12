@@ -1,4 +1,7 @@
-use std::cell::RefCell;
+use crate::server_state::MySurfaceState;
+use crate::state::State;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use smithay::delegate_xdg_shell;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
@@ -6,29 +9,26 @@ use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
-use crate::backends::Backend;
-use platform_channels::encodable_value::EncodableValue;
-use platform_channels::standard_method_codec::StandardMethodCodec;
-use crate::server_state::{MySurfaceState, ServerState};
+use std::cell::RefCell;
 
-delegate_xdg_shell!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_xdg_shell!(State);
 
-impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
+impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-        &mut self.xdg_shell_state
+        &mut self.common.xdg_shell_state
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
-        self.xdg_toplevels.insert(view_id, surface.clone());
+        self.common.xdg_toplevels.insert(view_id, surface.clone());
 
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Activated);
         });
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "new_toplevel",
@@ -51,9 +51,9 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        self.xdg_popups.insert(view_id, _surface.clone());
+        self.common.xdg_popups.insert(view_id, _surface.clone());
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "new_popup",
@@ -70,7 +70,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "interactive_move",
@@ -86,7 +86,7 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "interactive_resize",
@@ -111,6 +111,6 @@ impl<BackendData: Backend> XdgShellHandler for ServerState<BackendData> {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
-        self.xdg_toplevels.remove(&view_id);
+        self.common.xdg_toplevels.remove(&view_id);
     }
 }

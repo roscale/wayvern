@@ -1,6 +1,5 @@
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
-use log::{error, warn};
+use log::{error, info, warn};
 use smithay::backend::{egl, vulkan, x11};
 use smithay::backend::allocator::dmabuf::DmabufAllocator;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
@@ -11,7 +10,6 @@ use smithay::backend::vulkan::version::Version;
 use smithay::backend::x11::{X11Event, X11Surface};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME;
-use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::gbm;
@@ -19,21 +17,22 @@ use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::DeviceFd;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
-use crate::{send_frames_surface_tree, CalloopData};
-use crate::backends::Backend;
+use crate::send_frames_surface_tree;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::method_channel::MethodChannel;
 use platform_channels::standard_method_codec::StandardMethodCodec;
+use crate::backends::Backend;
 use crate::input_handling::handle_input;
-use crate::server_state::ServerState;
+use crate::server_state::Common;
+use crate::state::State;
 
 pub fn run_x11_client() {
     let mut event_loop = EventLoop::try_new().unwrap();
     let loop_handle = event_loop.handle();
-    
-    let display: Display<ServerState<X11Data>> = Display::new().unwrap();
-    let mut display_handle = display.handle();
+
+    let display: Display<State> = Display::new().unwrap();
+    let display_handle = display.handle();
 
     let x11_backend = x11::X11Backend::new().expect("Failed to initilize X11 backend");
     let x11_handle = x11_backend.handle();
@@ -62,7 +61,7 @@ pub fn run_x11_client() {
             model: "x11".into(),
         },
     );
-    let _global = output.create_global::<ServerState<X11Data>>(&display_handle);
+    let _global = output.create_global::<State>(&display_handle);
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
@@ -128,7 +127,7 @@ pub fn run_x11_client() {
     let _dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
-    
+
     let dmabuf_state = DmabufState::new();
     // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<X11Data>>(
     //     &display.handle(),
@@ -140,7 +139,7 @@ pub fn run_x11_client() {
         EmbedderChannels {
             rx_present,
             rx_request_fbo,
-            mut tx_fbo,
+            tx_fbo,
             tx_output_height,
             rx_baton,
             rx_request_external_texture_name,
@@ -150,31 +149,35 @@ pub fn run_x11_client() {
 
     let gles_renderer = unsafe { GlesRenderer::new(egl_context) }.expect("Failed to initialize GLES");
     let gl = Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _);
-    
-    let mut state = ServerState::new(
+
+    let backend = X11Backend {
+        x11_surface,
+        mode: Mode {
+            size: {
+                let s = window.size();
+                (s.w as i32, s.h as i32).into()
+            },
+            refresh: 144_000,
+        },
+    };
+
+    let mut common = Common::new(
         display,
         loop_handle,
-        X11Data {
-            x11_surface,
-            mode: Mode {
-                size: {
-                    let s = window.size();
-                    (s.w as i32, s.h as i32).into()
-                },
-                refresh: 144_000,
-            },
-        },
+        event_loop.get_signal(),
+        "x11".to_string(),
         dmabuf_state,
         flutter_engine,
+        tx_fbo,
         gles_renderer,
         gl,
     );
     
     let codec = Rc::new(StandardMethodCodec::new());
 
-    let tx_platform_message = state.tx_platform_message.take().unwrap();
+    let tx_platform_message = common.tx_platform_message.take().unwrap();
     let mut platform_method_channel = MethodChannel::<EncodableValue>::new(
-        state.flutter_engine_mut().binary_messenger.as_mut().unwrap(),
+        common.flutter_engine.binary_messenger.as_mut().unwrap(),
         "platform".to_string(),
         codec,
     );
@@ -185,47 +188,50 @@ pub fn run_x11_client() {
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();
-    state.flutter_engine_mut().send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+    common.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
-    state.shm_state.update_formats([
+    common.shm_state.update_formats([
         wl_shm::Format::Argb8888,
         wl_shm::Format::Xrgb8888,
     ]);
 
-    let mut baton = None;
-    
+    let mut state = State {
+        common,
+        backend: Backend::X11(backend),
+    };
+
     event_loop
         .handle()
-        .insert_source(x11_backend, move |event, _, data: &mut CalloopData<X11Data>| match event {
+        .insert_source(x11_backend, move |event, _, data: &mut State| match event {
             X11Event::CloseRequested { .. } => {
-                data.state.running.store(false, Ordering::SeqCst);
+                data.common.should_stop = true;
             }
             X11Event::Resized { new_size, .. } => {
                 let size = { (new_size.w as i32, new_size.h as i32).into() };
 
-                data.state.backend_data.mode = Mode {
+                data.backend.x11().mode = Mode {
                     size,
                     refresh: 144_000,
                 };
 
-                output.change_current_state(Some(data.state.backend_data.mode), None, None, Some((0, 0).into()));
+                output.change_current_state(Some(data.backend.x11().mode), None, None, Some((0, 0).into()));
                 output.set_preferred(mode);
 
                 let _ = tx_output_height.send(new_size.h);
-                data.state.flutter_engine().send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+                data.common.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                data.state.is_next_vblank_scheduled = false;
-                if let Some(baton) = data.baton.take() {
-                    data.state.flutter_engine().on_vsync(baton).unwrap();
+                data.common.is_next_vblank_scheduled = false;
+                if let Some(baton) = data.common.baton.take() {
+                    data.common.flutter_engine.on_vsync(baton).unwrap();
                 }
                 let start_time = std::time::Instant::now();
-                for surface in data.state.xdg_shell_state.toplevel_surfaces() {
+                for surface in data.common.xdg_shell_state.toplevel_surfaces() {
                     send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                 }
-                for surface in data.state.xdg_popups.values() {
+                for surface in data.common.xdg_popups.values() {
                     send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                 }
             }
@@ -235,45 +241,45 @@ pub fn run_x11_client() {
         .expect("Failed to insert X11 Backend into event loop");
 
     event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
-        if let Event::Msg(baton) = baton {
-            data.baton = Some(baton);
+        if let Msg(baton) = baton {
+            data.common.baton = Some(baton);
         }
-        if data.state.is_next_vblank_scheduled {
+        if data.common.is_next_vblank_scheduled {
             return;
         }
-        if let Some(baton) = data.baton.take() {
-            data.state.flutter_engine().on_vsync(baton).unwrap();
+        if let Some(baton) = data.common.baton.take() {
+            data.common.flutter_engine.on_vsync(baton).unwrap();
         }
 
-        // if let Err(err) = data.state.backend_data.x11_surface.submit() {
-        //     data.state.backend_data.x11_surface.reset_buffers();
+        // if let Err(err) = data.backend_data.x11_surface.submit() {
+        //     data.backend_data.x11_surface.reset_buffers();
         //     warn!("Failed to submit buffer: {}. Retrying", err);
         // };
     }).unwrap();
 
     event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
-        match data.state.backend_data.x11_surface.buffer() {
+        match data.backend.x11().x11_surface.buffer() {
             Ok((dmabuf, _age)) => {
-                let _ = data.tx_fbo.send(Some(dmabuf));
+                let _ = data.common.tx_fbo.send(Some(dmabuf));
             }
             Err(err) => {
                 error!("{err}");
-                let _ = data.tx_fbo.send(None);
+                let _ = data.common.tx_fbo.send(None);
             }
         }
     }).unwrap();
 
     event_loop.handle().insert_source(rx_present, move |_, _, data| {
-        data.state.is_next_vblank_scheduled = true;
-        if let Err(err) = data.state.backend_data.x11_surface.submit() {
-            data.state.backend_data.x11_surface.reset_buffers();
+        data.common.is_next_vblank_scheduled = true;
+        if let Err(err) = data.backend.x11().x11_surface.submit() {
+            data.backend.x11().x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);
         };
     }).unwrap();
 
     event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
         if let Msg(texture_id) = event {
-            let texture_swap_chain = data.state.texture_swapchains.get_mut(&texture_id);
+            let texture_swap_chain = data.common.texture_swapchains.get_mut(&texture_id);
             let texture_id = match texture_swap_chain {
                 Some(texture) => {
                     let texture = texture.start_read();
@@ -285,39 +291,19 @@ pub fn run_x11_client() {
         }
     }).unwrap();
 
-    while state.running.load(Ordering::SeqCst) {
-        let mut calloop_data = CalloopData {
-            state,
-            tx_fbo,
-            baton,
-        };
-
-        let result = event_loop.dispatch(None, &mut calloop_data);
-
-        CalloopData {
-            state,
-            tx_fbo,
-            baton,
-        } = calloop_data;
-
-        if result.is_err() {
-            state.running.store(false, Ordering::SeqCst);
-        } else {
-            display_handle.flush_clients().unwrap();
+    event_loop.run(None, &mut state, |state: &mut State| {
+        if state.common.should_stop {
+            info!("Shutting down");
+            state.common.loop_signal.stop();
+            state.common.loop_signal.wakeup();
+            return;
         }
-    }
 
-    // Avoid indefinite hang in the Flutter render thread waiting for new fbo.
-    drop(tx_fbo);
+        let _ = state.common.display_handle.flush_clients();
+    }).unwrap();
 }
 
-pub struct X11Data {
+pub struct X11Backend {
     pub x11_surface: X11Surface,
     pub mode: Mode,
-}
-
-impl Backend for X11Data {
-    fn seat_name(&self) -> String {
-        "x11".to_string()
-    }
 }

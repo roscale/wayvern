@@ -1,10 +1,5 @@
 use std::collections::HashMap;
-use std::io;
-use std::io::Write;
-use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
-use std::process::exit;
-use std::sync::atomic::Ordering;
 use rustix::fs::OFlags;
 use smithay::backend::allocator::dmabuf::{AnyError, AsDmabuf, Dmabuf, DmabufAllocator};
 use smithay::backend::allocator::{Allocator, Fourcc, Slot, Swapchain};
@@ -24,7 +19,6 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-use smithay::reexports::calloop::channel::Event;
 use smithay::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags};
@@ -39,11 +33,12 @@ use smithay::wayland::drm_lease::DrmLease;
 use tracing::{error, info, warn};
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
+use crate::send_frames_surface_tree;
 use crate::backends::Backend;
-use crate::{send_frames_surface_tree, CalloopData};
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::input_handling::handle_input;
-use crate::server_state::ServerState;
+use crate::server_state::Common;
+use crate::state::State;
 
 pub struct DrmBackend {
     pub session: LibSeatSession,
@@ -51,12 +46,6 @@ pub struct DrmBackend {
     primary_gpu: DrmNode,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<GlesTexture>)>,
     pointer_image: crate::cursor::Cursor,
-}
-
-impl Backend for DrmBackend {
-    fn seat_name(&self) -> String {
-        self.session.seat()
-    }
 }
 
 impl DrmBackend {
@@ -84,11 +73,10 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[
 const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
 pub fn run_drm_backend() {
-    let mut event_loop = EventLoop::try_new().unwrap();
+    let mut event_loop = EventLoop::<State>::try_new().unwrap();
     let loop_handle = event_loop.handle();
 
-    let display: Display<ServerState<DrmBackend>> = Display::new().unwrap();
-    let mut display_handle = display.handle();
+    let display: Display<State> = Display::new().unwrap();
 
     let (session, _notifier) = match LibSeatSession::new() {
         Ok(ret) => ret,
@@ -131,7 +119,7 @@ pub fn run_drm_backend() {
     let (device_id, path) = udev_backend.device_list().next().unwrap();
     let node = DrmNode::from_dev_id(device_id).unwrap();
 
-    let mut backend_data = DrmBackend {
+    let mut backend = DrmBackend {
         session,
         gpus: HashMap::new(),
         primary_gpu: node,
@@ -142,9 +130,9 @@ pub fn run_drm_backend() {
     // Initialize GPU state.
     let (gles_renderer, gl) = add_gpu(
         &loop_handle,
-        &mut backend_data,
+        &mut backend,
         node,
-        path
+        path,
     ).unwrap();
 
     let egl_context = gles_renderer.egl_context();
@@ -153,11 +141,11 @@ pub fn run_drm_backend() {
         .iter()
         .copied()
         .collect::<Vec<_>>();
-    let dmabuf_default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
+    let _dmabuf_default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
-    let mut dmabuf_state = DmabufState::new();
-    // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState<DrmBackend>>(
+    let dmabuf_state = DmabufState::new();
+    // let _dmabuf_global = dmabuf_state.create_global_with_default_feedback::<ServerState>(
     //     &display_handle,
     //     &dmabuf_default_feedback,
     // );
@@ -168,7 +156,7 @@ pub fn run_drm_backend() {
         EmbedderChannels {
             rx_present,
             rx_request_fbo,
-            mut tx_fbo,
+            tx_fbo,
             tx_output_height: _,
             rx_baton,
             rx_request_external_texture_name,
@@ -176,37 +164,49 @@ pub fn run_drm_backend() {
         },
     ) = FlutterEngine::new(egl_context, &loop_handle).unwrap();
 
-    let mut state = ServerState::new(
+    let mut common = Common::new(
         display,
         event_loop.handle(),
-        backend_data,
+        event_loop.get_signal(),
+        backend.session.seat(),
         dmabuf_state,
         flutter_engine,
+        tx_fbo,
         gles_renderer,
         gl,
     );
 
-    let mut baton = None;
-
-    // Initialize already present connectors.
-    state.device_changed(node);
-
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
-    state.shm_state.update_formats([
+    common.shm_state.update_formats([
         wl_shm::Format::Argb8888,
         wl_shm::Format::Xrgb8888,
     ]);
 
+    // Mandatory formats by the Wayland spec.
+    // TODO: Add more formats based on the GLES version.
+    common.shm_state.update_formats([
+        wl_shm::Format::Argb8888,
+        wl_shm::Format::Xrgb8888,
+    ]);
+    
+    let mut state = State {
+        common,
+        backend: Backend::Drm(backend),
+    };
+
+    // Initialize already present connectors.
+    state.device_changed(node);
+
     event_loop
         .handle()
         .insert_source(libinput_backend, move |event, _, data| {
-            let _dh = data.state.display_handle.clone();
+            let _dh = data.common.display_handle.clone();
             handle_input(&event, data);
             // TODO: When the cursor moves, the cursor CRTC plane has to be updated.
             // However, we should call this only when the cursor actually moves, and not on every
             // input event.
-            data.state.update_crtc_planes();
+            data.update_crtc_planes();
         })
         .unwrap();
 
@@ -215,49 +215,42 @@ pub fn run_drm_backend() {
         .insert_source(udev_backend, move |event, _, data| {
             if let UdevEvent::Changed { device_id } = event {
                 if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.state.device_changed(node)
+                    data.device_changed(node)
                 }
             }
         })
         .unwrap();
 
-    // Mandatory formats by the Wayland spec.
-    // TODO: Add more formats based on the GLES version.
-    state.shm_state.update_formats([
-        wl_shm::Format::Argb8888,
-        wl_shm::Format::Xrgb8888,
-    ]);
-
     loop_handle.insert_source(rx_baton, move |baton, _, data| {
-        if let Event::Msg(baton) = baton {
-            data.baton = Some(baton);
+        if let Msg(baton) = baton {
+            data.common.baton = Some(baton);
         }
-        if data.state.is_next_vblank_scheduled {
+        if data.common.is_next_vblank_scheduled {
             return;
         }
-        if let Some(baton) = data.baton.take() {
-            data.state.flutter_engine().on_vsync(baton).unwrap();
+        if let Some(baton) = data.common.baton.take() {
+            data.common.flutter_engine.on_vsync(baton).unwrap();
         }
     }).unwrap();
 
     loop_handle.insert_source(rx_request_fbo, move |_, _, data| {
-        let gpu_data = data.state.backend_data.get_gpu_data_mut();
+        let gpu_data = data.backend.drm().get_gpu_data_mut();
         let slot = gpu_data.swapchain.acquire().ok().flatten().unwrap();
         let dmabuf = slot.export().unwrap();
         gpu_data.current_slot = Some(slot);
-        data.tx_fbo.send(Some(dmabuf)).unwrap();
+        data.common.tx_fbo.send(Some(dmabuf)).unwrap();
     }).unwrap();
 
     loop_handle.insert_source(rx_present, move |_, _, data| {
-        let gpu_data = data.state.backend_data.get_gpu_data_mut();
+        let gpu_data = data.backend.drm().get_gpu_data_mut();
         gpu_data.last_rendered_slot = gpu_data.current_slot.take();
-        data.state.update_crtc_planes();
-        data.state.is_next_vblank_scheduled = true;
+        data.update_crtc_planes();
+        data.common.is_next_vblank_scheduled = true;
     }).unwrap();
 
     event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
         if let Msg(texture_id) = event {
-            let texture_swap_chain = data.state.texture_swapchains.get_mut(&texture_id);
+            let texture_swap_chain = data.common.texture_swapchains.get_mut(&texture_id);
             let texture_id = match texture_swap_chain {
                 Some(texture) => {
                     let texture = texture.start_read();
@@ -269,120 +262,16 @@ pub fn run_drm_backend() {
         }
     }).unwrap();
 
-    while state.running.load(Ordering::SeqCst) {
-        let mut calloop_data = CalloopData {
-            state,
-            tx_fbo,
-            baton,
-        };
-
-        let result = event_loop.dispatch(None, &mut calloop_data);
-
-        CalloopData {
-            state,
-            tx_fbo,
-            baton,
-        } = calloop_data;
-
-        if result.is_err() {
-            state.running.store(false, Ordering::SeqCst);
-        } else {
-            display_handle.flush_clients().unwrap();
+    event_loop.run(None, &mut state, |state: &mut State| {
+        if state.common.should_stop {
+            info!("Shutting down");
+            state.common.loop_signal.stop();
+            state.common.loop_signal.wakeup();
+            return;
         }
-    }
 
-    // Avoid indefinite hang in the Flutter render thread waiting for new rbo.
-    drop(tx_fbo);
-}
-
-impl ServerState<DrmBackend> {
-    pub fn update_crtc_planes(&mut self) {
-        let primary_gpu = self.backend_data.primary_gpu;
-        let gpu_data = if let Some(gpu_data) = self.backend_data.gpus.get_mut(&primary_gpu) {
-            gpu_data
-        } else {
-            return;
-        };
-
-        let (gles_renderer, surface, last_rendered_slot, swapchain) = (
-            &mut self.gles_renderer,
-            if let Some(surface) = gpu_data.surfaces.values_mut().next() {
-                surface
-            } else {
-                return;
-            },
-            &mut gpu_data.last_rendered_slot,
-            &mut gpu_data.swapchain,
-        );
-
-        let slot = if let Some(slot) = last_rendered_slot.as_mut() {
-            slot
-        } else {
-            // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
-            surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
-            surface.compositor.queue_frame(None).unwrap();
-            return;
-        };
-
-        let flutter_texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
-        let flutter_texture_buffer = TextureBuffer::from_texture(gles_renderer, flutter_texture, 1, Transform::Flipped180, None);
-        let flutter_texture_element = TextureRenderElement::from_texture_buffer(
-            Point::from((0.0, 0.0)),
-            &flutter_texture_buffer,
-            None,
-            None,
-            None,
-            Kind::Unspecified,
-        );
-
-        let pointer_frame = self.backend_data
-            .pointer_image
-            .get_image(1, self.clock.now().into());
-
-        let cursor_position = Point::from(self.mouse_position) - Point::from((pointer_frame.xhot as f64, pointer_frame.yhot as f64));
-
-        let pointer_images = &mut self.backend_data.pointer_images;
-        let pointer_image = pointer_images
-            .iter()
-            .find_map(|(image, texture)| {
-                if image == &pointer_frame {
-                    Some(texture.clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                let texture = TextureBuffer::from_memory(
-                    gles_renderer,
-                    &pointer_frame.pixels_rgba,
-                    Fourcc::Abgr8888,
-                    (pointer_frame.width as i32, pointer_frame.height as i32),
-                    false,
-                    1,
-                    Transform::Normal,
-                    None,
-                ).expect("Failed to import cursor bitmap");
-                pointer_images.push((pointer_frame, texture.clone()));
-                texture
-            });
-
-        let cursor_element = TextureRenderElement::from_texture_buffer(
-            cursor_position,
-            &pointer_image,
-            None,
-            None,
-            None,
-            Kind::Cursor,
-        );
-
-        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(
-            gles_renderer,
-            &[cursor_element, flutter_texture_element],
-            [0.0, 0.0, 0.0, 0.0],
-        ).unwrap();
-        surface.compositor.queue_frame(None).unwrap();
-        swapchain.submitted(slot);
-    }
+        let _ = state.common.display_handle.flush_clients();
+    }).unwrap();
 }
 
 #[allow(dead_code)]
@@ -403,7 +292,7 @@ struct GpuData {
 
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-enum DeviceAddError {
+pub enum DeviceAddError {
     #[error("Failed to open device using libseat: {0}")]
     DeviceOpen(libseat::Error),
     #[error("Failed to initialize drm device: {0}")]
@@ -416,9 +305,34 @@ enum DeviceAddError {
     AddNode(egl::Error),
 }
 
-impl ServerState<DrmBackend> {
+impl State {
+    fn device_changed(&mut self, node: DrmNode) {
+        let device = if let Some(device) = self.backend.drm().gpus.get_mut(&node) {
+            device
+        } else {
+            return;
+        };
+
+        println!("Device changed: {:?}", node);
+
+        let a = device.drm_scanner.scan_connectors(&device.drm_device);
+
+        println!("Scanned connectors: {:?}", a);
+
+        if let Ok(result) = a {
+            println!("Scanned connectors aaaa: {:?}", result);
+            for event in result {
+                println!("Event: {:?}", event);
+                match event {
+                    DrmScanEvent::Connected { connector, crtc } => self.connector_connected(node, connector, crtc.unwrap()),
+                    DrmScanEvent::Disconnected { connector, crtc } => self.connector_disconnected(node, connector, crtc.unwrap()),
+                }
+            }
+        }
+    }
+
     fn connector_connected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
-        let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
+        let device = if let Some(device) = self.backend.drm().gpus.get_mut(&node) {
             device
         } else {
             return;
@@ -481,7 +395,7 @@ impl ServerState<DrmBackend> {
                 model,
             },
         );
-        let global = output.create_global::<ServerState<DrmBackend>>(&self.display_handle);
+        let global = output.create_global::<State>(&self.common.display_handle);
 
         output.set_preferred(wl_mode);
         output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
@@ -492,7 +406,7 @@ impl ServerState<DrmBackend> {
             SUPPORTED_FORMATS
         };
 
-        let render_formats = self.gles_renderer.egl_context().dmabuf_render_formats().clone();
+        let render_formats = self.common.gles_renderer.egl_context().dmabuf_render_formats().clone();
 
         let driver = match device.drm_device.get_driver() {
             Ok(driver) => driver,
@@ -534,7 +448,7 @@ impl ServerState<DrmBackend> {
         };
 
         let mut surface = SurfaceData {
-            dh: self.display_handle.clone(),
+            dh: self.common.display_handle.clone(),
             device_id: node,
             render_node: device.render_node,
             global: Some(global),
@@ -545,7 +459,7 @@ impl ServerState<DrmBackend> {
         surface
             .compositor
             .render_frame::<_, TextureRenderElement<_>>(
-                &mut self.gles_renderer,
+                &mut self.common.gles_renderer,
                 &[],
                 [0.0, 0.0, 0.0, 0.0])
             .unwrap();
@@ -555,11 +469,11 @@ impl ServerState<DrmBackend> {
         device.surfaces.insert(crtc, surface);
 
         device.swapchain.resize(wl_mode.size.w as u32, wl_mode.size.h as u32);
-        self.flutter_engine().send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
+        self.common.flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
     }
 
     fn connector_disconnected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
-        let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
+        let device = if let Some(device) = self.backend.drm().gpus.get_mut(&node) {
             device
         } else {
             return;
@@ -576,34 +490,99 @@ impl ServerState<DrmBackend> {
         }
     }
 
-    fn device_changed(&mut self, node: DrmNode) {
-        let device = if let Some(device) = self.backend_data.gpus.get_mut(&node) {
-            device
+    pub fn update_crtc_planes(&mut self) {
+        let backend = self.backend.drm();
+        let primary_gpu = backend.primary_gpu;
+
+        let gpu_data = if let Some(gpu_data) = backend.gpus.get_mut(&primary_gpu) {
+            gpu_data
         } else {
             return;
         };
 
-        println!("Device changed: {:?}", node);
+        let (gles_renderer, surface, last_rendered_slot, swapchain) = (
+            &mut self.common.gles_renderer,
+            if let Some(surface) = gpu_data.surfaces.values_mut().next() {
+                surface
+            } else {
+                return;
+            },
+            &mut gpu_data.last_rendered_slot,
+            &mut gpu_data.swapchain,
+        );
 
-        let a = device.drm_scanner.scan_connectors(&device.drm_device);
+        let slot = if let Some(slot) = last_rendered_slot.as_mut() {
+            slot
+        } else {
+            // Flutter hasn't rendered anything yet. Just draw a black frame to keep the VBlank cycle going.
+            surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(gles_renderer, &[], [0.0, 0.0, 0.0, 0.0]).unwrap();
+            surface.compositor.queue_frame(None).unwrap();
+            return;
+        };
 
-        println!("Scanned connectors: {:?}", a);
+        let flutter_texture = gles_renderer.import_dmabuf(&slot.export().unwrap(), None).unwrap();
+        let flutter_texture_buffer = TextureBuffer::from_texture(gles_renderer, flutter_texture, 1, Transform::Flipped180, None);
+        let flutter_texture_element = TextureRenderElement::from_texture_buffer(
+            Point::from((0.0, 0.0)),
+            &flutter_texture_buffer,
+            None,
+            None,
+            None,
+            Kind::Unspecified,
+        );
 
-        if let Ok(result) = a {
-            println!("Scanned connectors aaaa: {:?}", result);
-            for event in result {
-                println!("Event: {:?}", event);
-                match event {
-                    DrmScanEvent::Connected { connector, crtc } => self.connector_connected(node, connector, crtc.unwrap()),
-                    DrmScanEvent::Disconnected { connector, crtc } => self.connector_disconnected(node, connector, crtc.unwrap()),
+        let pointer_frame = backend
+            .pointer_image
+            .get_image(1, self.common.clock.now().into());
+
+        let cursor_position = Point::from(self.common.mouse_position) - Point::from((pointer_frame.xhot as f64, pointer_frame.yhot as f64));
+
+        let pointer_images = &mut backend.pointer_images;
+        let pointer_image = pointer_images
+            .iter()
+            .find_map(|(image, texture)| {
+                if image == &pointer_frame {
+                    Some(texture.clone())
+                } else {
+                    None
                 }
-            }
-        }
+            })
+            .unwrap_or_else(|| {
+                let texture = TextureBuffer::from_memory(
+                    gles_renderer,
+                    &pointer_frame.pixels_rgba,
+                    Fourcc::Abgr8888,
+                    (pointer_frame.width as i32, pointer_frame.height as i32),
+                    false,
+                    1,
+                    Transform::Normal,
+                    None,
+                ).expect("Failed to import cursor bitmap");
+                pointer_images.push((pointer_frame, texture.clone()));
+                texture
+            });
+
+        let cursor_element = TextureRenderElement::from_texture_buffer(
+            cursor_position,
+            &pointer_image,
+            None,
+            None,
+            None,
+            Kind::Cursor,
+        );
+
+        surface.compositor.render_frame::<GlesRenderer, TextureRenderElement<GlesTexture>>(
+            gles_renderer,
+            &[cursor_element, flutter_texture_element],
+            [0.0, 0.0, 0.0, 0.0],
+        ).unwrap();
+        surface.compositor.queue_frame(None).unwrap();
+        swapchain.submitted(slot);
     }
 }
 
 pub fn add_gpu(
-    loop_handle: &LoopHandle<CalloopData<DrmBackend>>,
+    loop_handle: &LoopHandle<State>,
     drm_backend: &mut DrmBackend,
     node: DrmNode,
     path: &Path,
@@ -626,21 +605,21 @@ pub fn add_gpu(
     let registration_token = loop_handle
         .insert_source(
             notifier,
-            move |event, _metadata, data: &mut CalloopData<_>| match event {
+            move |event, _metadata, data: &mut State| match event {
                 DrmEvent::VBlank(crtc) => {
-                    data.state.is_next_vblank_scheduled = false;
-                    if let Some(surface) = data.state.backend_data.gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
+                    data.common.is_next_vblank_scheduled = false;
+                    if let Some(surface) = data.backend.drm().gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
                         let _ = surface.compositor.frame_submitted();
                     }
-                    if let Some(baton) = data.baton.take() {
-                        data.state.flutter_engine().on_vsync(baton).unwrap();
+                    if let Some(baton) = data.common.baton.take() {
+                        data.common.flutter_engine.on_vsync(baton).unwrap();
                     }
 
                     let start_time = std::time::Instant::now();
-                    for surface in data.state.xdg_shell_state.toplevel_surfaces() {
+                    for surface in data.common.xdg_shell_state.toplevel_surfaces() {
                         send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                     }
-                    for surface in data.state.xdg_popups.values() {
+                    for surface in data.common.xdg_popups.values() {
                         send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
                     }
                 }

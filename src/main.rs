@@ -2,13 +2,9 @@ use std::env;
 
 use crate::backends::drm::run_drm_backend;
 use crate::backends::x11::run_x11_client;
-use crate::backends::Backend;
 use crate::flutter_engine::FlutterEngine;
 use crate::mouse_button_tracker::MouseButtonTracker;
-use crate::server_state::ServerState;
-use smithay::reexports::calloop::channel;
 use smithay::{
-    backend::allocator::dmabuf::Dmabuf,
     reexports::wayland_server::{
         backend::{ClientData, ClientId, DisconnectReason},
         protocol::wl_surface::{self},
@@ -31,6 +27,7 @@ mod texture_swap_chain;
 mod protocols;
 mod backends;
 mod keyboard;
+mod state;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
@@ -51,12 +48,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 pub struct FlutterState {
     pub flutter_engine: FlutterEngine,
     pub mouse_button_tracker: MouseButtonTracker,
-}
-
-pub struct CalloopData<BackendData: Backend + 'static> {
-    pub state: ServerState<BackendData>,
-    pub tx_fbo: channel::Sender<Option<Dmabuf>>,
-    pub baton: Option<flutter_engine::Baton>,
 }
 
 pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {

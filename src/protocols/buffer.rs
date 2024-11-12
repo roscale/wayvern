@@ -1,33 +1,32 @@
-use smithay::{delegate_dmabuf, delegate_shm};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::shm::{ShmHandler, ShmState};
-use crate::backends::Backend;
-use crate::server_state::ServerState;
+use smithay::{delegate_dmabuf, delegate_shm};
+use crate::state::State;
 
-delegate_shm!(@<BackendData: Backend + 'static> ServerState<BackendData>);
-delegate_dmabuf!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_shm!(State);
+delegate_dmabuf!(State);
 
-impl<BackendData: Backend> BufferHandler for ServerState<BackendData> {
+impl BufferHandler for State {
     fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
-impl<BackendData: Backend> ShmHandler for ServerState<BackendData> {
+impl ShmHandler for State {
     fn shm_state(&self) -> &ShmState {
-        &self.shm_state
+        &self.common.shm_state
     }
 }
 
-impl<BackendData: Backend> DmabufHandler for ServerState<BackendData> {
+impl DmabufHandler for State {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.dmabuf_state
+        &mut self.common.dmabuf_state
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf, notifier: ImportNotifier) {
-        self.imported_dmabufs.push(_dmabuf);
-        notifier.successful::<ServerState<BackendData>>().expect("Failed to notify successful import");
+        self.common.imported_dmabufs.push(_dmabuf);
+        notifier.successful::<State>().expect("Failed to notify successful import");
     }
 }
 

@@ -1,22 +1,18 @@
 use std::collections::HashMap;
 use std::env::{remove_var, set_var};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
-use input_linux::Key::Esc;
-use input_linux::sys::KEY_ESC;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::input::{ButtonState, KeyState, Keycode};
+use smithay::backend::input::{KeyState};
 use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::input::pointer::{ButtonEvent, MotionEvent, PointerHandle};
+use smithay::input::pointer::{PointerHandle};
 use smithay::input::{Seat, SeatState};
-use smithay::input::keyboard::{KeyboardHandle, Keysym};
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{channel, Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::calloop::{channel, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::calloop::channel::{Channel, Sender};
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
@@ -29,39 +25,40 @@ use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
-use crate::backends::Backend;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::method_call::MethodCall;
 use platform_channels::method_result::MethodResult;
-use crate::flutter_engine::{FlutterEngine, KeyEvent};
+use crate::flutter_engine::{Baton, FlutterEngine, KeyEvent};
 use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;
-use crate::{CalloopData, ClientState};
+use crate::{ClientState};
+use crate::state::State;
 
-pub struct ServerState<BackendData: Backend + 'static> {
-    pub running: Arc<AtomicBool>,
+pub struct Common {
+    pub should_stop: bool,
+    
     pub display_handle: DisplayHandle,
-    pub loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
+    pub loop_handle: LoopHandle<'static, State>,
+    pub loop_signal: LoopSignal,
     pub clock: Clock<Monotonic>,
 
-    pub seat: Seat<ServerState<BackendData>>,
-    pub seat_state: SeatState<ServerState<BackendData>>,
+    pub seat: Seat<State>,
+    pub seat_state: SeatState<State>,
     pub data_device_state: DataDeviceState,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
-    pub pointer: PointerHandle<ServerState<BackendData>>,
-    pub keyboard: KeyboardHandle<ServerState<BackendData>>,
-
-    pub backend_data: Box<BackendData>,
+    pub pointer: PointerHandle<State>,
+    pub keyboard: KeyboardHandle<State>,
 
     pub flutter_engine: Box<FlutterEngine>,
     pub tx_platform_message: Option<Sender<(MethodCall, Box<dyn MethodResult>)>>,
-
     pub tx_flutter_handled_key_events: Sender<(KeyEvent, bool)>,
+    pub tx_fbo: Sender<Option<Dmabuf>>,
+    pub baton: Option<Baton>,
 
     next_view_id: u64,
     next_texture_id: i64,
@@ -81,38 +78,39 @@ pub struct ServerState<BackendData: Backend + 'static> {
     pub texture_swapchains: HashMap<i64, TextureSwapChain>,
 }
 
-impl<BackendData: Backend + 'static> ServerState<BackendData> {
+impl Common {
     pub fn new(
-        display: Display<ServerState<BackendData>>,
-        loop_handle: LoopHandle<'static, CalloopData<BackendData>>,
-        backend_data: BackendData,
+        display: Display<State>,
+        loop_handle: LoopHandle<'static, State>,
+        loop_signal: LoopSignal,
+        seat_name: String,
         dmabuf_state: DmabufState,
         flutter_engine: Box<FlutterEngine>,
+        tx_fbo: Sender<Option<Dmabuf>>,
         gles_renderer: GlesRenderer,
         gl: Gles2,
-    ) -> ServerState<BackendData> {
+    ) -> Common {
         let display_handle = display.handle();
         let clock = Clock::new();
-        let compositor_state = CompositorState::new::<Self>(&display_handle);
-        let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
-        let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
+        let compositor_state = CompositorState::new::<State>(&display_handle);
+        let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
+        let shm_state = ShmState::new::<State>(&display_handle, vec![]);
 
         // init input
         let mut seat_state = SeatState::new();
-        let seat_name = backend_data.seat_name();
-        let mut seat = seat_state.new_wl_seat(&display_handle, seat_name.clone());
+        let mut seat = seat_state.new_wl_seat(&display_handle, seat_name);
 
         let keyboard = seat.add_keyboard(Default::default(), 200, 25).unwrap();
         let pointer = seat.add_pointer();
 
-        let data_device_state = DataDeviceState::new::<Self>(&display_handle);
+        let data_device_state = DataDeviceState::new::<State>(&display_handle);
 
         let source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = source.socket_name().to_string_lossy().into_owned();
         loop_handle
             .insert_source(source, |client_stream, _, data| {
                 if let Err(err) = data
-                    .state.display_handle
+                    .common.display_handle
                     .insert_client(client_stream, Arc::new(ClientState::default()))
                 {
                     warn!("Error adding wayland client: {}", err);
@@ -131,11 +129,11 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         loop_handle
             .insert_source(
                 Generic::new(display, Interest::READ, Mode::Level),
-                |_, display, data| {
+                |_, display, mut data| {
                     profiling::scope!("dispatch_clients");
                     // Safety: we don't drop the display
                     unsafe {
-                        display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                        display.get_mut().dispatch_clients(&mut data).unwrap();
                     }
                     Ok(PostAction::Continue)
                 },
@@ -151,11 +149,13 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         Self::register_flutter_handled_key_events_handler(&loop_handle, rx_flutter_handled_key_events);
 
         Self {
-            running: Arc::new(AtomicBool::new(true)),
+            should_stop: false,
+            tx_fbo,
+            baton: None,
+            loop_signal,
             display_handle,
             loop_handle,
             clock,
-            backend_data: Box::new(backend_data),
             mouse_position: (0.0, 0.0),
             view_id_under_cursor: None,
             is_next_vblank_scheduled: false,
@@ -185,12 +185,12 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         }
     }
 
-    fn now_ms(&self) -> u32 {
+    pub(crate) fn now_ms(&self) -> u32 {
         Duration::from(self.clock.now()).as_millis() as u32
     }
 
     fn register_platform_message_handler(
-        loop_handle: &LoopHandle<'static, CalloopData<BackendData>>,
+        loop_handle: &LoopHandle<'static, State>,
         rx_platform_message: Channel<(MethodCall, Box<dyn MethodResult>)>,
     ) {
         macro_rules! extract {
@@ -229,12 +229,12 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                             let x = *extract!(get_value(args, "x"), EncodableValue::Double);
                             let y = *extract!(get_value(args, "y"), EncodableValue::Double);
 
-                            data.state.pointer_hover(view_id, x, y);
+                            data.pointer_hover(view_id, x, y);
 
                             result.success(None);
                         }
                         "pointer_exit" => {
-                            data.state.pointer_exit();
+                            data.pointer_exit();
 
                             result.success(None);
                         }
@@ -243,7 +243,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                             let button = get_value(args, "button").long_value().unwrap() as u32;
                             let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
 
-                            data.state.mouse_button_event(
+                            data.mouse_button_event(
                                 *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
                                 is_pressed,
                             );
@@ -256,7 +256,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                             let view_id = args[0].long_value().unwrap() as u64;
                             let activate = extract!(args[1], EncodableValue::Bool);
 
-                            data.state.activate_window(view_id, activate);
+                            data.activate_window(view_id, activate);
 
                             result.success(None);
                         }
@@ -266,7 +266,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                             let width = get_value(args, "width").long_value().unwrap() as i32;
                             let height = get_value(args, "height").long_value().unwrap() as i32;
 
-                            data.state.resize_window(view_id, width, height);
+                            data.resize_window(view_id, width, height);
 
                             result.success(None);
                         }
@@ -280,13 +280,13 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
     }
 
     fn register_flutter_handled_key_events_handler(
-        loop_handle: &LoopHandle<CalloopData<BackendData>>,
+        loop_handle: &LoopHandle<State>,
         rx_flutter_handled_key_events: Channel<(KeyEvent, bool)>,
     ) {
         loop_handle
             .insert_source(
                 rx_flutter_handled_key_events,
-                |event, (), data| {
+                |event, (), mut data| {
                     let Msg((key_event, handled)) = event else {
                         return;
                     };
@@ -296,7 +296,7 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                         return;
                     }
 
-                    let text_input = &mut data.state.flutter_engine.text_input;
+                    let text_input = &mut data.common.flutter_engine.text_input;
 
                     if text_input.is_active() {
                         if key_event.state == KeyState::Pressed
@@ -313,9 +313,9 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
                     // The compositor was not interested in this event,
                     // so we forward it to the Wayland client in focus
                     // if there is one.
-                    let keyboard = data.state.keyboard.clone();
+                    let keyboard = data.common.keyboard.clone();
                     keyboard.input_forward(
-                        &mut data.state,
+                        &mut data,
                         key_event.key_code,
                         key_event.state,
                         SERIAL_COUNTER.next_serial(),
@@ -326,101 +326,9 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
             )
             .expect("Failed to init wayland server source");
     }
-
-    fn pointer_hover(&mut self, view_id: u64, x: f64, y: f64) {
-        let pointer = self.pointer.clone();
-
-        self.view_id_under_cursor = Some(view_id);
-
-        let Some(surface) = self.surfaces.get(&view_id).cloned() else {
-            return;
-        };
-
-        pointer.motion(
-            self,
-            Some((surface.clone(), (0.0, 0.0).into())),
-            &MotionEvent {
-                location: (x, y).into(),
-                serial: SERIAL_COUNTER.next_serial(),
-                time: self.now_ms(),
-            },
-        );
-        pointer.frame(self);
-    }
-
-    fn pointer_exit(&mut self) {
-        let pointer = self.pointer.clone();
-
-        self.view_id_under_cursor = None;
-
-        pointer.motion(
-            self,
-            None,
-            &MotionEvent {
-                location: (0.0, 0.0).into(),
-                serial: SERIAL_COUNTER.next_serial(),
-                time: self.now_ms(),
-            },
-        );
-        pointer.frame(self);
-    }
-
-    fn mouse_button_event(&mut self, button: u32, is_pressed: bool) {
-        let pointer = self.pointer.clone();
-
-        pointer.button(
-            self,
-            &ButtonEvent {
-                serial: SERIAL_COUNTER.next_serial(),
-                time: self.now_ms(),
-                button,
-                state: if is_pressed { ButtonState::Pressed } else { ButtonState::Released },
-            },
-        );
-        pointer.frame(self);
-    }
-
-    fn activate_window(&mut self, view_id: u64, activate: bool) {
-        let pointer = self.seat.get_pointer().unwrap();
-        let keyboard = self.seat.get_keyboard().unwrap();
-
-        let serial = SERIAL_COUNTER.next_serial();
-
-        if pointer.is_grabbed() {
-            return;
-        }
-
-        let Some(toplevel) = self.xdg_toplevels.get(&view_id).cloned() else {
-            return;
-        };
-
-        toplevel.with_pending_state(|state| {
-            if activate {
-                state.states.set(xdg_toplevel::State::Activated);
-            } else {
-                state.states.unset(xdg_toplevel::State::Activated);
-            }
-        });
-        keyboard.set_focus(self, Some(toplevel.wl_surface().clone()), serial);
-
-        for toplevel in self.xdg_toplevels.values() {
-            toplevel.send_pending_configure();
-        }
-    }
-
-    fn resize_window(&mut self, view_id: u64, width: i32, height: i32) {
-        let Some(surface) = self.xdg_toplevels.get(&view_id).cloned() else {
-            return;
-        };
-
-        surface.with_pending_state(|state| {
-            state.size = Some((width, height).into());
-        });
-        surface.send_pending_configure();
-    }
 }
 
-impl<BackendData: Backend + 'static> ServerState<BackendData> {
+impl Common {
     pub fn get_new_view_id(&mut self) -> u64 {
         let view_id = self.next_view_id;
         self.next_view_id += 1;
@@ -431,49 +339,6 @@ impl<BackendData: Backend + 'static> ServerState<BackendData> {
         let texture_id = self.next_texture_id;
         self.next_texture_id += 1;
         texture_id
-    }
-}
-
-impl<BackendData: Backend + 'static> ServerState<BackendData> {
-    pub fn handle_key_event(&mut self, key_code: Keycode, state: KeyState) {
-        let keyboard = self.keyboard.clone();
-
-        print!("Key event: {:?} {:?}", key_code, state);
-        if state == KeyState::Pressed && key_code.raw() as i32 == 9 {
-            self.running.store(false, std::sync::atomic::Ordering::SeqCst);
-            return;
-        }
-        
-        // Update the keyboard state without forwarding the event to the client.
-        let ((mods, keysym), mods_changed) =
-            keyboard.input_intercept::<_, _>(self, key_code, state, |_, mods, keysym_handle| {
-                (*mods, keysym_handle.modified_sym())
-            });
-
-        let now_ms = self.now_ms();
-        let tx = self.tx_flutter_handled_key_events.clone();
-
-        self.flutter_engine_mut().send_key_event(
-            KeyEvent {
-                key_code,
-                specified_logical_key: None,
-                codepoint: keysym.key_char(),
-                state,
-                time: now_ms,
-                mods,
-                mods_changed,
-            },
-            tx,
-        ).unwrap();
-    }
-}
-
-impl<BackendData: Backend + 'static> ServerState<BackendData> {
-    pub fn flutter_engine(&self) -> &FlutterEngine {
-        self.flutter_engine.as_ref()
-    }
-    pub fn flutter_engine_mut(&mut self) -> &mut FlutterEngine {
-        self.flutter_engine.as_mut()
     }
 }
 

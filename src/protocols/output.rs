@@ -1,8 +1,7 @@
 use smithay::delegate_output;
 use smithay::wayland::output::OutputHandler;
-use crate::backends::Backend;
-use crate::server_state::ServerState;
+use crate::state::State;
 
-delegate_output!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_output!(State);
 
-impl<BackendData: Backend> OutputHandler for ServerState<BackendData> {}
+impl OutputHandler for State {}

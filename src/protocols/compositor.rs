@@ -1,9 +1,8 @@
-use crate::backends::Backend;
+use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
+use crate::server_state::MySurfaceState;
+use crate::ClientState;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
-use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
-use crate::server_state::{MySurfaceState, ServerState};
-use crate::ClientState;
 use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::delegate_compositor;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -14,12 +13,13 @@ use smithay::wayland::compositor::{with_states, with_surface_tree_upward, Buffer
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use std::cell::RefCell;
+use crate::state::State;
 
-delegate_compositor!(@<BackendData: Backend + 'static> ServerState<BackendData>);
+delegate_compositor!(State);
 
-impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
+impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
-        &mut self.compositor_state
+        &mut self.common.compositor_state
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
@@ -27,16 +27,16 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
-        let view_id = self.get_new_view_id();
+        let view_id = self.common.get_new_view_id();
         with_states(surface, |surface_data| {
             surface_data.data_map.insert_if_missing(|| RefCell::new(MySurfaceState {
                 view_id,
                 old_texture_size: None,
             }));
         });
-        self.surfaces.insert(view_id, surface.clone());
+        self.common.surfaces.insert(view_id, surface.clone());
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "new_surface",
@@ -56,7 +56,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "new_subsurface",
@@ -87,13 +87,13 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
                 .as_ref()
                 .and_then(|assignment| match assignment {
                     BufferAssignment::NewBuffer(buffer) => {
-                        self.gles_renderer.import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
+                        self.common.gles_renderer.import_buffer(buffer, Some(surface_data), &[]).and_then(|t| t.ok())
                     }
                     _ => None,
                 });
 
             let (texture_id, size) = if let Some(texture) = texture {
-                unsafe { self.gl.Finish(); }
+                unsafe { self.common.gl.Finish(); }
 
                 let size = texture.size();
 
@@ -106,25 +106,25 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
                 let texture_id = match size_changed {
                     true => None,
-                    false => self.texture_ids_per_view_id.get(&view_id).and_then(|v| v.last()).cloned(),
+                    false => self.common.texture_ids_per_view_id.get(&view_id).and_then(|v| v.last()).cloned(),
                 };
 
                 let texture_id = texture_id.unwrap_or_else(|| {
-                    let texture_id = self.get_new_texture_id();
-                    while self.texture_ids_per_view_id.entry(view_id).or_default().len() >= 2 {
-                        self.texture_ids_per_view_id.entry(view_id).or_default().remove(0);
+                    let texture_id = self.common.get_new_texture_id();
+                    while self.common.texture_ids_per_view_id.entry(view_id).or_default().len() >= 2 {
+                        self.common.texture_ids_per_view_id.entry(view_id).or_default().remove(0);
                     }
 
-                    self.texture_ids_per_view_id.entry(view_id).or_default().push(texture_id);
-                    self.view_id_per_texture_id.insert(texture_id, view_id);
-                    self.flutter_engine_mut().register_external_texture(texture_id).unwrap();
+                    self.common.texture_ids_per_view_id.entry(view_id).or_default().push(texture_id);
+                    self.common.view_id_per_texture_id.insert(texture_id, view_id);
+                    self.common.flutter_engine.register_external_texture(texture_id).unwrap();
                     texture_id
                 });
 
-                let swapchain = self.texture_swapchains.entry(texture_id).or_default();
+                let swapchain = self.common.texture_swapchains.entry(texture_id).or_default();
                 swapchain.commit(texture.clone());
 
-                self.flutter_engine_mut().mark_external_texture_frame_available(texture_id).unwrap();
+                self.common.flutter_engine.mark_external_texture_frame_available(texture_id).unwrap();
 
                 (texture_id, Some(size))
             } else {
@@ -221,7 +221,7 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
 
         let commit_message = commit_message.serialize();
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "commit_surface",
@@ -234,9 +234,9 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
         let view_id = with_states(_surface, |surface_data| {
             surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
-        self.surfaces.remove(&view_id);
+        self.common.surfaces.remove(&view_id);
 
-        self.flutter_engine_mut().invoke_method(
+        self.common.flutter_engine.invoke_method(
             StandardMethodCodec::new(),
             "platform",
             "destroy_surface",
@@ -248,13 +248,13 @@ impl<BackendData: Backend> CompositorHandler for ServerState<BackendData> {
     }
 }
 
-impl<BackendData: Backend> ServerState<BackendData> {
+impl State {
     fn send_initial_configure(&self, surface: &WlSurface) {
         let view_id = with_states(surface, |states| {
             states.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
         });
 
-        if let Some(toplevel) = self.xdg_toplevels.get(&view_id) {
+        if let Some(toplevel) = self.common.xdg_toplevels.get(&view_id) {
             let initial_configure_sent = with_states(surface, |states| {
                 states
                     .data_map
@@ -270,7 +270,7 @@ impl<BackendData: Backend> ServerState<BackendData> {
             }
         }
 
-        if let Some(popup) = self.xdg_popups.get(&view_id) {
+        if let Some(popup) = self.common.xdg_popups.get(&view_id) {
             let initial_configure_sent = with_states(surface, |states| {
                 states
                     .data_map

@@ -36,15 +36,14 @@ use embedder_sys::FlutterRendererConfig;
 use embedder_sys::FlutterRendererConfig__bindgen_ty_1;
 use embedder_sys::FlutterWindowMetricsEvent;
 use embedder_sys::FLUTTER_ENGINE_VERSION;
-use crate::{flutter_engine::callbacks::{
+use crate::flutter_engine::callbacks::{
     clear_current,
     fbo_callback,
     make_current,
     make_resource_current,
     present_with_info,
     surface_transformation,
-}, CalloopData, ServerState};
-use crate::backends::Backend;
+};
 use crate::flutter_engine::callbacks::{gl_external_texture_frame_callback, platform_message_callback, populate_existing_damage, post_task_callback, runs_task_on_current_thread_callback, vsync_callback};
 use embedder_sys::{FlutterCustomTaskRunners, FlutterEngineMarkExternalTextureFrameAvailable, FlutterEngineRegisterExternalTexture, FlutterEngineRunTask, FlutterEngineSendPointerEvent, FlutterPointerEvent, FlutterTaskRunnerDescription};
 use platform_channels::basic_message_channel::BasicMessageChannel;
@@ -60,6 +59,7 @@ use crate::flutter_engine::text_input::TextInput;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 use crate::keyboard::glfw_key_codes::{get_glfw_keycode, get_glfw_modifiers};
 use crate::mouse_button_tracker::MouseButtonTracker;
+use crate::state::State;
 
 mod callbacks;
 pub mod task_runner;
@@ -85,7 +85,7 @@ pub struct FlutterEngine {
 pub struct Baton(isize);
 
 impl FlutterEngine {
-    pub fn new<BackendData: Backend + 'static>(root_egl_context: &EGLContext, loop_handle: &LoopHandle<CalloopData<BackendData>>) -> Result<(Box<Self>, EmbedderChannels), Box<dyn std::error::Error>> {
+    pub fn new(root_egl_context: &EGLContext, loop_handle: &LoopHandle<State>) -> Result<(Box<Self>, EmbedderChannels), Box<dyn std::error::Error>> {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
@@ -232,8 +232,8 @@ impl FlutterEngine {
 
         this.handle = flutter_engine;
 
-        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |_deadline, _, data: &mut CalloopData<BackendData>| {
-            let duration = data.state.flutter_engine_mut().task_runner.execute_expired_tasks(move |task| {
+        let task_runner_timer_dispatcher = Dispatcher::new(Timer::immediate(), move |_deadline, _, data: &mut State| {
+            let duration = data.common.flutter_engine.task_runner.execute_expired_tasks(move |task| {
                 unsafe { FlutterEngineRunTask(flutter_engine, task as *const _) };
             });
             TimeoutAction::ToDuration(duration)
@@ -241,10 +241,10 @@ impl FlutterEngine {
 
         let task_runner_timer_registration_token = loop_handle.register_dispatcher(task_runner_timer_dispatcher.clone()).unwrap();
 
-        loop_handle.insert_source(rx_reschedule_task_runner_timer, move |event, _, data: &mut CalloopData<BackendData>| {
+        loop_handle.insert_source(rx_reschedule_task_runner_timer, move |event, _, data: &mut State| {
             if let Msg(duration) = event {
                 task_runner_timer_dispatcher.as_source_mut().set_duration(duration);
-                data.state.loop_handle.update(&task_runner_timer_registration_token).unwrap();
+                data.common.loop_handle.update(&task_runner_timer_registration_token).unwrap();
             }
         }).unwrap();
 
