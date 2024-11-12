@@ -36,7 +36,7 @@ use crate::send_frames_surface_tree;
 use crate::backends::Backend;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::input_handling::handle_input;
-use crate::server_state::Common;
+use crate::common::Common;
 use crate::state::State;
 
 pub struct DrmBackend {

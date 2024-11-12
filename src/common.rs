@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::env::{remove_var, set_var};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::input::{KeyState};
 use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::input::pointer::{PointerHandle};
@@ -16,7 +16,7 @@ use smithay::reexports::calloop::channel::{Channel, Sender};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Size, SERIAL_COUNTER};
+use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Size};
 use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::selection::data_device::DataDeviceState;
@@ -26,14 +26,16 @@ use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use tracing::{info, warn};
-
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::method_call::MethodCall;
+use platform_channels::method_channel::MethodChannel;
 use platform_channels::method_result::MethodResult;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::flutter_engine::{Baton, FlutterEngine, KeyEvent};
-use crate::mouse_button_tracker::FLUTTER_TO_LINUX_MOUSE_BUTTONS;
 use crate::texture_swap_chain::TextureSwapChain;
 use crate::{ClientState};
+use crate::input_handling::register_flutter_handled_key_event_handler;
+use crate::platform_message_handler::register_platform_message_handler;
 use crate::state::State;
 
 pub struct Common {
@@ -55,8 +57,7 @@ pub struct Common {
     pub keyboard: KeyboardHandle<State>,
 
     pub flutter_engine: Box<FlutterEngine>,
-    pub tx_platform_message: Option<Sender<(MethodCall, Box<dyn MethodResult>)>>,
-    pub tx_flutter_handled_key_events: Sender<(KeyEvent, bool)>,
+    pub tx_flutter_handled_key_event: Sender<(KeyEvent, bool)>,
     pub tx_fbo: Sender<Option<Dmabuf>>,
     pub baton: Option<Baton>,
 
@@ -85,7 +86,7 @@ impl Common {
         loop_signal: LoopSignal,
         seat_name: String,
         dmabuf_state: DmabufState,
-        flutter_engine: Box<FlutterEngine>,
+        mut flutter_engine: Box<FlutterEngine>,
         tx_fbo: Sender<Option<Dmabuf>>,
         rx_baton: Channel<Baton>,
         rx_request_external_texture_name: Channel<i64>,
@@ -110,6 +111,7 @@ impl Common {
 
         let source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = source.socket_name().to_string_lossy().into_owned();
+
         loop_handle
             .insert_source(source, |client_stream, _, data| {
                 if let Err(err) = data
@@ -129,19 +131,33 @@ impl Common {
         set_var("GDK_BACKEND", "wayland"); // Force GTK apps to run on Wayland.
         set_var("QT_QPA_PLATFORM", "wayland"); // Force QT apps to run on Wayland.
 
-        loop_handle
-            .insert_source(
-                Generic::new(display, Interest::READ, Mode::Level),
-                |_, display, mut data| {
-                    profiling::scope!("dispatch_clients");
-                    // Safety: we don't drop the display
-                    unsafe {
-                        display.get_mut().dispatch_clients(&mut data).unwrap();
-                    }
-                    Ok(PostAction::Continue)
-                },
-            )
-            .expect("Failed to init wayland server source");
+        let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
+
+        let codec = Rc::new(StandardMethodCodec::new());
+        let mut platform_method_channel = MethodChannel::<EncodableValue>::new(
+            flutter_engine.binary_messenger.as_mut().unwrap(),
+            "platform".to_string(),
+            codec,
+        );
+        // TODO: Provide a way to specify a channel directly, without registering a callback.
+        platform_method_channel.set_method_call_handler(Some(Box::new(move |method_call, result| {
+            tx_platform_message.send((method_call, result)).unwrap();
+        })));
+
+        register_platform_message_handler(&loop_handle, rx_platform_message);
+
+        let (tx_flutter_handled_key_event, rx_flutter_handled_key_event) = channel::channel::<(KeyEvent, bool)>();
+
+        register_flutter_handled_key_event_handler(&loop_handle, rx_flutter_handled_key_event);
+
+        loop_handle.insert_source(Generic::new(display, Interest::READ, Mode::Level), |_, display, data| {
+            profiling::scope!("dispatch_clients");
+            // Safety: we don't drop the display
+            unsafe {
+                display.get_mut().dispatch_clients(data).unwrap();
+            }
+            Ok(PostAction::Continue)
+        }).unwrap();
 
         loop_handle.insert_source(rx_baton, move |baton, _, data| {
             if let Msg(baton) = baton {
@@ -168,14 +184,6 @@ impl Common {
                 let _ = tx_external_texture_name.send((texture_id, RGBA8));
             }
         }).unwrap();
-
-        let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
-
-        Self::register_platform_message_handler(&loop_handle, rx_platform_message);
-
-        let (tx_flutter_handled_key_events, rx_flutter_handled_key_events) = channel::channel::<(KeyEvent, bool)>();
-
-        Self::register_flutter_handled_key_events_handler(&loop_handle, rx_flutter_handled_key_events);
 
         Self {
             should_stop: false,
@@ -209,151 +217,12 @@ impl Common {
             texture_ids_per_view_id: HashMap::new(),
             view_id_per_texture_id: HashMap::new(),
             texture_swapchains: HashMap::new(),
-            tx_platform_message: Some(tx_platform_message),
-            tx_flutter_handled_key_events,
+            tx_flutter_handled_key_event,
         }
     }
 
     pub(crate) fn now_ms(&self) -> u32 {
         Duration::from(self.clock.now()).as_millis() as u32
-    }
-
-    fn register_platform_message_handler(
-        loop_handle: &LoopHandle<'static, State>,
-        rx_platform_message: Channel<(MethodCall, Box<dyn MethodResult>)>,
-    ) {
-        macro_rules! extract {
-            ($e:expr, $p:path) => {
-                match $e {
-                    $p(value) => value,
-                    _ => panic!("Failed to extract value"),
-                }
-            };
-        }
-
-        fn get_value<'a>(map: &'a EncodableValue, key: &str) -> &'a EncodableValue {
-            let map = extract!(map, EncodableValue::Map);
-            for (k, v) in map {
-                if let EncodableValue::String(k) = k {
-                    if k == key {
-                        return v;
-                    }
-                }
-            }
-            panic!("Key {} not found in map", key);
-        }
-
-        loop_handle
-            .insert_source(
-                rx_platform_message,
-                |event, (), data| {
-                    let Msg((method_call, mut result)) = event else {
-                        return;
-                    };
-
-                    match method_call.method() {
-                        "pointer_hover" => {
-                            let args = method_call.arguments().unwrap();
-                            let view_id = get_value(args, "view_id").long_value().unwrap() as u64;
-                            let x = *extract!(get_value(args, "x"), EncodableValue::Double);
-                            let y = *extract!(get_value(args, "y"), EncodableValue::Double);
-
-                            data.pointer_hover(view_id, x, y);
-
-                            result.success(None);
-                        }
-                        "pointer_exit" => {
-                            data.pointer_exit();
-
-                            result.success(None);
-                        }
-                        "mouse_button_event" => {
-                            let args = method_call.arguments().unwrap();
-                            let button = get_value(args, "button").long_value().unwrap() as u32;
-                            let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
-
-                            data.mouse_button_event(
-                                *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
-                                is_pressed,
-                            );
-
-                            result.success(None);
-                        }
-                        "activate_window" => {
-                            let args = method_call.arguments().unwrap();
-                            let args = extract!(args, EncodableValue::List);
-                            let view_id = args[0].long_value().unwrap() as u64;
-                            let activate = extract!(args[1], EncodableValue::Bool);
-
-                            data.activate_window(view_id, activate);
-
-                            result.success(None);
-                        }
-                        "resize_window" => {
-                            let args = method_call.arguments().unwrap();
-                            let view_id = get_value(args, "view_id").long_value().unwrap() as u64;
-                            let width = get_value(args, "width").long_value().unwrap() as i32;
-                            let height = get_value(args, "height").long_value().unwrap() as i32;
-
-                            data.resize_window(view_id, width, height);
-
-                            result.success(None);
-                        }
-                        _ => {
-                            result.success(None);
-                        }
-                    }
-                },
-            )
-            .expect("Failed to init wayland server source");
-    }
-
-    fn register_flutter_handled_key_events_handler(
-        loop_handle: &LoopHandle<State>,
-        rx_flutter_handled_key_events: Channel<(KeyEvent, bool)>,
-    ) {
-        loop_handle
-            .insert_source(
-                rx_flutter_handled_key_events,
-                |event, (), mut data| {
-                    let Msg((key_event, handled)) = event else {
-                        return;
-                    };
-
-                    if handled {
-                        // Flutter consumed this event. Probably a keyboard shortcut.
-                        return;
-                    }
-
-                    let text_input = &mut data.common.flutter_engine.text_input;
-
-                    if text_input.is_active() {
-                        if key_event.state == KeyState::Pressed
-                            && !key_event.mods.ctrl
-                            && !key_event.mods.alt
-                        {
-                            // text_input.press_key(key_event.key_code.raw(), key_event.codepoint);
-                        }
-                        // It doesn't matter if the text field captured the key event or not.
-                        // As long as it stays active, don't forward events to the Wayland client.
-                        return;
-                    }
-
-                    // The compositor was not interested in this event,
-                    // so we forward it to the Wayland client in focus
-                    // if there is one.
-                    let keyboard = data.common.keyboard.clone();
-                    keyboard.input_forward(
-                        &mut data,
-                        key_event.key_code,
-                        key_event.state,
-                        SERIAL_COUNTER.next_serial(),
-                        key_event.time,
-                        key_event.mods_changed,
-                    );
-                },
-            )
-            .expect("Failed to init wayland server source");
     }
 }
 

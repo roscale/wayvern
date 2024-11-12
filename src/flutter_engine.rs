@@ -366,24 +366,6 @@ impl FlutterEngine {
                 handled_channel.send((key_event, handled)).unwrap();
             })),
         );
-
-        // let result = unsafe {
-        //     FlutterEngineSendKeyEvent(
-        //         self.handle,
-        //         &event as *const _,
-        //         Some(Self::flutter_key_event_callback),
-        //         &tx as *const _ as *mut c_void,
-        //     )
-        // };
-        //
-        // if result != 0 {
-        //     return Err(format!("Could not send key event, error {result}").into());
-        // }
-
-
-        // Also send on `flutter/keyevent`.
-
-
         Ok(())
     }
 

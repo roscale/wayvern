@@ -1,6 +1,6 @@
 //! https://api.flutter.dev/flutter/services/SystemChannels/textInput-constant.html
 
-use crate::server_state::Common;
+use crate::common::Common;
 use input_linux::sys::KEY_ENTER;
 use platform_channels::method_call::MethodCall;
 use platform_channels::method_channel::MethodChannel;

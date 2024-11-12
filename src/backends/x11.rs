@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use log::{error, info, warn};
 use smithay::backend::{egl, vulkan, x11};
 use smithay::backend::allocator::dmabuf::DmabufAllocator;
@@ -18,12 +17,9 @@ use smithay::utils::DeviceFd;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use crate::send_frames_surface_tree;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
-use platform_channels::encodable_value::EncodableValue;
-use platform_channels::method_channel::MethodChannel;
-use platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::backends::Backend;
 use crate::input_handling::handle_input;
-use crate::server_state::Common;
+use crate::common::Common;
 use crate::state::State;
 
 pub fn run_x11_client() {
@@ -174,19 +170,6 @@ pub fn run_x11_client() {
         gles_renderer,
         gl,
     );
-    
-    let codec = Rc::new(StandardMethodCodec::new());
-
-    let tx_platform_message = common.tx_platform_message.take().unwrap();
-    let mut platform_method_channel = MethodChannel::<EncodableValue>::new(
-        common.flutter_engine.binary_messenger.as_mut().unwrap(),
-        "platform".to_string(),
-        codec,
-    );
-    // TODO: Provide a way to specify a channel directly, without registering a callback.
-    platform_method_channel.set_method_call_handler(Some(Box::new(move |method_call, result| {
-        tx_platform_message.send((method_call, result)).unwrap();
-    })));
 
     let size = window.size();
     tx_output_height.send(size.h).unwrap();

@@ -22,12 +22,13 @@ mod gles_framebuffer_importer;
 mod mouse_button_tracker;
 mod input_handling;
 mod cursor;
-mod server_state;
+mod common;
 mod texture_swap_chain;
 mod protocols;
 mod backends;
 mod keyboard;
 mod state;
+mod platform_message_handler;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {

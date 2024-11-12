@@ -1,4 +1,4 @@
-use crate::server_state::MySurfaceState;
+use crate::common::MySurfaceState;
 use crate::state::State;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
