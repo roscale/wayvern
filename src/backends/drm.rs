@@ -12,7 +12,7 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::texture::{TextureBuffer, TextureRenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
+use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::session::{libseat, Session};
 use smithay::backend::session::libseat::LibSeatSession;
@@ -20,7 +20,6 @@ use smithay::backend::udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent};
 use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
-use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags};
 use smithay::reexports::drm::Device as _;
 use smithay::reexports::input::Libinput;
@@ -172,6 +171,9 @@ pub fn run_drm_backend() {
         dmabuf_state,
         flutter_engine,
         tx_fbo,
+        rx_baton,
+        rx_request_external_texture_name,
+        tx_external_texture_name,
         gles_renderer,
         gl,
     );
@@ -221,18 +223,6 @@ pub fn run_drm_backend() {
         })
         .unwrap();
 
-    loop_handle.insert_source(rx_baton, move |baton, _, data| {
-        if let Msg(baton) = baton {
-            data.common.baton = Some(baton);
-        }
-        if data.common.is_next_vblank_scheduled {
-            return;
-        }
-        if let Some(baton) = data.common.baton.take() {
-            data.common.flutter_engine.on_vsync(baton).unwrap();
-        }
-    }).unwrap();
-
     loop_handle.insert_source(rx_request_fbo, move |_, _, data| {
         let gpu_data = data.backend.drm().get_gpu_data_mut();
         let slot = gpu_data.swapchain.acquire().ok().flatten().unwrap();
@@ -246,20 +236,6 @@ pub fn run_drm_backend() {
         gpu_data.last_rendered_slot = gpu_data.current_slot.take();
         data.update_crtc_planes();
         data.common.is_next_vblank_scheduled = true;
-    }).unwrap();
-
-    event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
-        if let Msg(texture_id) = event {
-            let texture_swap_chain = data.common.texture_swapchains.get_mut(&texture_id);
-            let texture_id = match texture_swap_chain {
-                Some(texture) => {
-                    let texture = texture.start_read();
-                    texture.tex_id()
-                }
-                None => 0,
-            };
-            let _ = tx_external_texture_name.send((texture_id, RGBA8));
-        }
     }).unwrap();
 
     event_loop.run(None, &mut state, |state: &mut State| {

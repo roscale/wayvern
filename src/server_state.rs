@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::input::{KeyState};
-use smithay::backend::renderer::gles::ffi::Gles2;
+use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::input::pointer::{PointerHandle};
 use smithay::input::{Seat, SeatState};
@@ -38,7 +38,7 @@ use crate::state::State;
 
 pub struct Common {
     pub should_stop: bool,
-    
+
     pub display_handle: DisplayHandle,
     pub loop_handle: LoopHandle<'static, State>,
     pub loop_signal: LoopSignal,
@@ -87,6 +87,9 @@ impl Common {
         dmabuf_state: DmabufState,
         flutter_engine: Box<FlutterEngine>,
         tx_fbo: Sender<Option<Dmabuf>>,
+        rx_baton: Channel<Baton>,
+        rx_request_external_texture_name: Channel<i64>,
+        tx_external_texture_name: Sender<(u32, u32)>,
         gles_renderer: GlesRenderer,
         gl: Gles2,
     ) -> Common {
@@ -139,6 +142,32 @@ impl Common {
                 },
             )
             .expect("Failed to init wayland server source");
+
+        loop_handle.insert_source(rx_baton, move |baton, _, data| {
+            if let Msg(baton) = baton {
+                data.common.baton = Some(baton);
+            }
+            if data.common.is_next_vblank_scheduled {
+                return;
+            }
+            if let Some(baton) = data.common.baton.take() {
+                data.common.flutter_engine.on_vsync(baton).unwrap();
+            }
+        }).unwrap();
+
+        loop_handle.insert_source(rx_request_external_texture_name, move |event, _, data| {
+            if let Msg(texture_id) = event {
+                let texture_swap_chain = data.common.texture_swapchains.get_mut(&texture_id);
+                let texture_id = match texture_swap_chain {
+                    Some(texture) => {
+                        let texture = texture.start_read();
+                        texture.tex_id()
+                    }
+                    None => 0,
+                };
+                let _ = tx_external_texture_name.send((texture_id, RGBA8));
+            }
+        }).unwrap();
 
         let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
 

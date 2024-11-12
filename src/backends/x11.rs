@@ -4,13 +4,12 @@ use smithay::backend::{egl, vulkan, x11};
 use smithay::backend::allocator::dmabuf::DmabufAllocator;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::allocator::vulkan::{ImageUsageFlags, VulkanAllocator};
-use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
+use smithay::backend::renderer::gles::ffi::Gles2;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::vulkan::version::Version;
 use smithay::backend::x11::{X11Event, X11Surface};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME;
-use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::gbm;
 use smithay::reexports::wayland_server::Display;
@@ -169,6 +168,9 @@ pub fn run_x11_client() {
         dmabuf_state,
         flutter_engine,
         tx_fbo,
+        rx_baton,
+        rx_request_external_texture_name,
+        tx_external_texture_name,
         gles_renderer,
         gl,
     );
@@ -240,23 +242,6 @@ pub fn run_x11_client() {
         })
         .expect("Failed to insert X11 Backend into event loop");
 
-    event_loop.handle().insert_source(rx_baton, move |baton, _, data| {
-        if let Msg(baton) = baton {
-            data.common.baton = Some(baton);
-        }
-        if data.common.is_next_vblank_scheduled {
-            return;
-        }
-        if let Some(baton) = data.common.baton.take() {
-            data.common.flutter_engine.on_vsync(baton).unwrap();
-        }
-
-        // if let Err(err) = data.backend_data.x11_surface.submit() {
-        //     data.backend_data.x11_surface.reset_buffers();
-        //     warn!("Failed to submit buffer: {}. Retrying", err);
-        // };
-    }).unwrap();
-
     event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
         match data.backend.x11().x11_surface.buffer() {
             Ok((dmabuf, _age)) => {
@@ -275,20 +260,6 @@ pub fn run_x11_client() {
             data.backend.x11().x11_surface.reset_buffers();
             warn!("Failed to submit buffer: {}. Retrying", err);
         };
-    }).unwrap();
-
-    event_loop.handle().insert_source(rx_request_external_texture_name, move |event, _, data| {
-        if let Msg(texture_id) = event {
-            let texture_swap_chain = data.common.texture_swapchains.get_mut(&texture_id);
-            let texture_id = match texture_swap_chain {
-                Some(texture) => {
-                    let texture = texture.start_read();
-                    texture.tex_id()
-                }
-                None => 0,
-            };
-            let _ = tx_external_texture_name.send((texture_id, RGBA8));
-        }
     }).unwrap();
 
     event_loop.run(None, &mut state, |state: &mut State| {
