@@ -24,7 +24,7 @@ use smithay::input::keyboard::ModifiersState;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::{Dispatcher, LoopHandle};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use embedder_sys::{FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterEngineUnregisterExternalTexture, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
+use embedder_sys::{FlutterEngineAOTData, FlutterEngineAOTDataSource, FlutterEngineAOTDataSourceType_kFlutterEngineAOTDataSourceTypeElfPath, FlutterEngineAOTDataSource__bindgen_ty_1, FlutterEngineCreateAOTData, FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterEngineUnregisterExternalTexture, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
 use embedder_sys::FlutterEngineOnVsync;
 use embedder_sys::FlutterEngineGetCurrentTime;
 use embedder_sys::FlutterEngine as FlutterEngineHandle;
@@ -112,9 +112,19 @@ impl FlutterEngine {
             tx_external_texture_name,
         };
 
-        let assets_path = CString::new(if option_env!("BUNDLE").is_some() { "data/flutter_assets" } else { "wayvern_flutter/build/linux/x64/debug/bundle/data/flutter_assets" })?;
-        let icu_data_path = CString::new(if option_env!("BUNDLE").is_some() { "data/icudtl.dat" } else { "wayvern_flutter/build/linux/x64/debug/bundle/data/icudtl.dat" })?;
-        let executable_path = CString::new(std::fs::canonicalize("/proc/self/exe")?.as_os_str().as_bytes())?;
+        let flutter_engine_build = option_env!("FLUTTER_ENGINE").unwrap_or("debug");
+
+        let executable_path = std::fs::canonicalize("/proc/self/exe")?;
+
+        let bundle_root = if option_env!("BUNDLE").is_some() {
+            "".to_string()
+        } else {
+            format!("wayvern_flutter/build/linux/x64/{flutter_engine_build}/bundle/")
+        };
+
+        let assets_path = CString::new(format!("{bundle_root}data/flutter_assets"))?;
+        let icu_data_path = CString::new(format!("{bundle_root}data/icudtl.dat"))?;
+        let executable_path = CString::new(executable_path.as_os_str().as_bytes())?;
         let observatory_port = CString::new("--observatory-port=12345")?;
         let disable_service_auth_codes = CString::new("--disable-service-auth-codes")?;
 
@@ -124,6 +134,24 @@ impl FlutterEngine {
             disable_service_auth_codes.as_ptr(),
         ];
 
+        let elf_path = CString::new(format!("{bundle_root}lib/libapp.so"))?;
+        let mut aot_data: FlutterEngineAOTData = null_mut();
+
+        if flutter_engine_build != "debug" {
+            let aot_data_source = FlutterEngineAOTDataSource {
+                type_: FlutterEngineAOTDataSourceType_kFlutterEngineAOTDataSourceTypeElfPath,
+                __bindgen_anon_1: FlutterEngineAOTDataSource__bindgen_ty_1 {
+                    elf_path: elf_path.as_ptr(),
+                },
+            };
+            let result = unsafe {
+                FlutterEngineCreateAOTData(&aot_data_source as *const _, &mut aot_data as *mut _)
+            };
+            if result != 0 {
+                return Err(format!("Could not create AOT data, error {result}").into());
+            }
+        }
+        
         let mut this = Box::new(Self {
             handle: null_mut(),
             data: FlutterEngineData::new(root_egl_context, flutter_engine_channels)?,
@@ -177,7 +205,7 @@ impl FlutterEngine {
             shutdown_dart_vm_when_done: true,
             compositor: null(),
             dart_old_gen_heap_size: 0,
-            aot_data: null_mut(),
+            aot_data,
             compute_platform_resolved_locale_callback: None,
             dart_entrypoint_argc: 0,
             dart_entrypoint_argv: null(),
@@ -377,7 +405,7 @@ impl FlutterEngine {
         }
         Ok(())
     }
-    
+
     pub fn unregister_external_texture(&self, texture_id: i64) -> Result<(), Box<dyn std::error::Error>> {
         let result = unsafe { FlutterEngineUnregisterExternalTexture(self.handle, texture_id) };
         if result != 0 {

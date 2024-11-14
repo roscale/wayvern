@@ -39,13 +39,13 @@ $(DEPS_DIR)/release/libflutter_engine.so:
 	mv /tmp/libflutter_engine.so $(DEPS_DIR)/release
 
 cargo_debug:
-	BUNDLE= cargo build
+	BUNDLE= FLUTTER_ENGINE=debug cargo build
 
 cargo_profile:
-	BUNDLE= cargo build --release
+	BUNDLE= FLUTTER_ENGINE=profile cargo build --release
 
 cargo_release:
-	BUNDLE= cargo build --release
+	BUNDLE= FLUTTER_ENGINE=release cargo build --release
 
 flutter_debug:
 	cd wayvern_flutter && flutter build linux --debug
