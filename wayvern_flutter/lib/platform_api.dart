@@ -170,7 +170,9 @@ class PlatformApi extends _$PlatformApi {
   }
 
   Future<void> unregisterViewTexture(int textureId) {
-    return state.platform.invokeMethod('unregister_view_texture', textureId);
+    return state.platform.invokeMethod('unregister_view_texture', {
+      "texture_id": textureId,
+    });
   }
 
   Future<void> touchDown(int viewId, int touchId, Offset position) {

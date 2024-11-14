@@ -92,6 +92,14 @@ pub fn register_platform_message_handler(
 
                         result.success(None);
                     }
+                    "unregister_view_texture" => {
+                        let args = method_call.arguments().unwrap();
+                        let texture_id = get_value(args, "texture_id").long_value().unwrap();
+
+                        data.unregister_view_texture(texture_id);
+
+                        result.success(None);
+                    }
                     _ => {
                         result.success(None);
                     }
@@ -192,5 +200,9 @@ impl State {
             state.size = Some((width, height).into());
         });
         surface.send_pending_configure();
+    }
+    
+    pub fn unregister_view_texture(&mut self, texture_id: i64) {
+        self.common.flutter_engine.unregister_external_texture(texture_id).unwrap();
     }
 }

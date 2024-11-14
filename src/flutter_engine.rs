@@ -24,7 +24,7 @@ use smithay::input::keyboard::ModifiersState;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::{Dispatcher, LoopHandle};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use embedder_sys::{FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
+use embedder_sys::{FlutterEngineRun, FlutterEngineSendKeyEvent, FlutterEngineUnregisterExternalTexture, FlutterKeyEvent, FlutterKeyEventType_kFlutterKeyEventTypeDown, FlutterKeyEventType_kFlutterKeyEventTypeUp};
 use embedder_sys::FlutterEngineOnVsync;
 use embedder_sys::FlutterEngineGetCurrentTime;
 use embedder_sys::FlutterEngine as FlutterEngineHandle;
@@ -374,6 +374,14 @@ impl FlutterEngine {
         let result = unsafe { FlutterEngineRegisterExternalTexture(self.handle, texture_id) };
         if result != 0 {
             return Err(format!("Could not register external texture, error {result}").into());
+        }
+        Ok(())
+    }
+    
+    pub fn unregister_external_texture(&self, texture_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { FlutterEngineUnregisterExternalTexture(self.handle, texture_id) };
+        if result != 0 {
+            return Err(format!("Could not unregister external texture, error {result}").into());
         }
         Ok(())
     }

@@ -24,10 +24,16 @@ struct Captures {
     reply: BinaryReply,
 }
 
-extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut ::std::os::raw::c_void) {
+extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut c_void) {
     let captures = unsafe { Box::from_raw(user_data as *mut Captures) };
-    let data = unsafe { std::slice::from_raw_parts(data, data_size) };
-    captures.reply.unwrap()(Some(data));
+
+    let data = if !data.is_null() && data_size != 0 {
+        Some(unsafe { std::slice::from_raw_parts(data, data_size) })
+    } else {
+        None
+    };
+    
+    captures.reply.unwrap()(data);
 }
 
 impl BinaryMessenger for BinaryMessengerImpl {
