@@ -3,13 +3,16 @@ use std::mem::size_of;
 use crate::flutter_engine::{FlutterEngine, KeyEvent};
 use embedder_sys::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, FlutterPointerEvent, FlutterPointerPhase_kDown, FlutterPointerPhase_kHover, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp, FlutterPointerSignalKind_kFlutterPointerSignalKindNone, FlutterPointerSignalKind_kFlutterPointerSignalKindScroll};
 use input_linux::sys::KEY_ESC;
+use log::error;
 use smithay::backend::input;
 use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
-use smithay::input::keyboard::Keycode;
+use smithay::backend::session::Session;
+use smithay::input::keyboard::{Keycode, Keysym};
 use smithay::reexports::calloop::channel::Channel;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::SERIAL_COUNTER;
+use crate::backends::Backend;
 use crate::state::State;
 
 pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut State) {
@@ -156,6 +159,17 @@ impl State {
             keyboard.input_intercept::<_, _>(self, key_code, state, |_, mods, keysym_handle| {
                 (*mods, keysym_handle.modified_sym())
             });
+
+        // Switching to another VT
+        if let Backend::Drm(backend) = &mut self.backend &&
+            (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&keysym.raw())
+        {
+            if let Err(_err) = backend.session
+                .change_vt((keysym.raw() - Keysym::XF86_Switch_VT_1.raw() + 1) as i32)
+            {
+                error!("Failed switching virtual terminal.");
+            }
+        }
 
         self.common.flutter_engine.send_key_event(
             KeyEvent {

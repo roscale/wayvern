@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 use std::env;
 use std::env::set_var;
 use std::sync::Arc;
