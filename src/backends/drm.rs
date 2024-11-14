@@ -23,16 +23,16 @@ use smithay::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{connector, crtc, Device, ModeTypeFlags};
 use smithay::reexports::drm::Device as _;
 use smithay::reexports::input::Libinput;
-use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{DeviceFd, Point, Transform};
+use smithay::utils::{DeviceFd, Physical, Point, Size, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
 use smithay::wayland::drm_lease::DrmLease;
 use tracing::{error, info, warn};
 use smithay_drm_extras::display_info;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
-use crate::send_frames_surface_tree;
+use crate::run_event_loop;
 use crate::backends::Backend;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::input_handling::handle_input;
@@ -71,19 +71,10 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[
 ];
 const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
-pub fn run_drm_backend() {
-    let mut event_loop = EventLoop::<State>::try_new().unwrap();
-    let loop_handle = event_loop.handle();
+pub fn run_drm_backend(mut event_loop: EventLoop<'static, State>, display_handle: DisplayHandle) {
+    let loop_handle: LoopHandle<State> = event_loop.handle();
 
-    let display: Display<State> = Display::new().unwrap();
-
-    let (session, _notifier) = match LibSeatSession::new() {
-        Ok(ret) => ret,
-        Err(err) => {
-            error!("Could not initialize a session: {}", err);
-            return;
-        }
-    };
+    let (session, _notifier) = LibSeatSession::new().unwrap();
 
     let primary_gpu = if let Ok(var) = std::env::var("DRM_DEVICE") {
         DrmNode::from_path(var).expect("Invalid drm device path")
@@ -101,13 +92,7 @@ pub fn run_drm_backend() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let udev_backend = match UdevBackend::new(session.seat()) {
-        Ok(ret) => ret,
-        Err(err) => {
-            error!(error = ?err, "Failed to initialize udev backend");
-            return;
-        }
-    };
+    let udev_backend = UdevBackend::new(session.seat()).unwrap();
 
     let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
         session.clone().into(),
@@ -156,7 +141,6 @@ pub fn run_drm_backend() {
             rx_present,
             rx_request_fbo,
             tx_fbo,
-            tx_output_height: _,
             rx_baton,
             rx_request_external_texture_name,
             tx_external_texture_name,
@@ -164,8 +148,8 @@ pub fn run_drm_backend() {
     ) = FlutterEngine::new(egl_context, &loop_handle).unwrap();
 
     let mut common = Common::new(
-        display,
-        event_loop.handle(),
+        display_handle,
+        loop_handle.clone(),
         event_loop.get_signal(),
         backend.session.seat(),
         dmabuf_state,
@@ -191,7 +175,7 @@ pub fn run_drm_backend() {
         wl_shm::Format::Argb8888,
         wl_shm::Format::Xrgb8888,
     ]);
-    
+
     let mut state = State {
         common,
         backend: Backend::Drm(backend),
@@ -200,28 +184,22 @@ pub fn run_drm_backend() {
     // Initialize already present connectors.
     state.device_changed(node);
 
-    event_loop
-        .handle()
-        .insert_source(libinput_backend, move |event, _, data| {
-            let _dh = data.common.display_handle.clone();
-            handle_input(&event, data);
-            // TODO: When the cursor moves, the cursor CRTC plane has to be updated.
-            // However, we should call this only when the cursor actually moves, and not on every
-            // input event.
-            data.update_crtc_planes();
-        })
-        .unwrap();
+    loop_handle.insert_source(libinput_backend, move |event, _, data| {
+        let _dh = data.common.display_handle.clone();
+        handle_input(&event, data);
+        // TODO: When the cursor moves, the cursor CRTC plane has to be updated.
+        // However, we should call this only when the cursor actually moves, and not on every
+        // input event.
+        data.update_crtc_planes();
+    }).unwrap();
 
-    event_loop
-        .handle()
-        .insert_source(udev_backend, move |event, _, data| {
-            if let UdevEvent::Changed { device_id } = event {
-                if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.device_changed(node)
-                }
+    loop_handle.insert_source(udev_backend, move |event, _, data| {
+        if let UdevEvent::Changed { device_id } = event {
+            if let Ok(node) = DrmNode::from_dev_id(device_id) {
+                data.device_changed(node)
             }
-        })
-        .unwrap();
+        }
+    }).unwrap();
 
     loop_handle.insert_source(rx_request_fbo, move |_, _, data| {
         let gpu_data = data.backend.drm().get_gpu_data_mut();
@@ -238,16 +216,7 @@ pub fn run_drm_backend() {
         data.common.is_next_vblank_scheduled = true;
     }).unwrap();
 
-    event_loop.run(None, &mut state, |state: &mut State| {
-        if state.common.should_stop {
-            info!("Shutting down");
-            state.common.loop_signal.stop();
-            state.common.loop_signal.wakeup();
-            return;
-        }
-
-        let _ = state.common.display_handle.flush_clients();
-    }).unwrap();
+    run_event_loop(&mut event_loop, &mut state);
 }
 
 #[allow(dead_code)]
@@ -444,8 +413,11 @@ impl State {
 
         device.surfaces.insert(crtc, surface);
 
-        device.swapchain.resize(wl_mode.size.w as u32, wl_mode.size.h as u32);
-        self.common.flutter_engine.send_window_metrics((wl_mode.size.w as u32, wl_mode.size.h as u32).into()).unwrap();
+        let size: Size<u32, Physical> = (wl_mode.size.w as u32, wl_mode.size.h as u32).into();
+
+        device.swapchain.resize(size.w, size.h);
+
+        self.common.flutter_engine.set_canvas_size(size, false).unwrap();
     }
 
     fn connector_disconnected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
@@ -583,21 +555,10 @@ pub fn add_gpu(
             notifier,
             move |event, _metadata, data: &mut State| match event {
                 DrmEvent::VBlank(crtc) => {
-                    data.common.is_next_vblank_scheduled = false;
                     if let Some(surface) = data.backend.drm().gpus.get_mut(&node).unwrap().surfaces.get_mut(&crtc) {
                         let _ = surface.compositor.frame_submitted();
                     }
-                    if let Some(baton) = data.common.baton.take() {
-                        data.common.flutter_engine.on_vsync(baton).unwrap();
-                    }
-
-                    let start_time = std::time::Instant::now();
-                    for surface in data.common.xdg_shell_state.toplevel_surfaces() {
-                        send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-                    }
-                    for surface in data.common.xdg_popups.values() {
-                        send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-                    }
+                    data.common.vsync();
                 }
                 DrmEvent::Error(error) => {
                     error!("{:?}", error);

@@ -1,4 +1,5 @@
-use log::{error, info, warn};
+use std::env::remove_var;
+use log::{error, warn};
 use smithay::backend::{egl, vulkan, x11};
 use smithay::backend::allocator::dmabuf::DmabufAllocator;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
@@ -9,27 +10,24 @@ use smithay::backend::vulkan::version::Version;
 use smithay::backend::x11::{X11Event, X11Surface};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::{EventLoop, LoopHandle};
 use smithay::reexports::gbm;
-use smithay::reexports::wayland_server::Display;
+use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::DeviceFd;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
-use crate::send_frames_surface_tree;
+use crate::run_event_loop;
 use crate::flutter_engine::{EmbedderChannels, FlutterEngine};
 use crate::backends::Backend;
 use crate::input_handling::handle_input;
 use crate::common::Common;
 use crate::state::State;
 
-pub fn run_x11_client() {
-    let mut event_loop = EventLoop::try_new().unwrap();
-    let loop_handle = event_loop.handle();
+pub fn run_x11_client(mut event_loop: EventLoop<'static, State>, display_handle: DisplayHandle) {
+    let loop_handle: LoopHandle<State> = event_loop.handle();
+    let loop_signal = event_loop.get_signal();
 
-    let display: Display<State> = Display::new().unwrap();
-    let display_handle = display.handle();
-
-    let x11_backend = x11::X11Backend::new().expect("Failed to initilize X11 backend");
+    let x11_backend = x11::X11Backend::new().unwrap();
     let x11_handle = x11_backend.handle();
 
     let (node, fd) = x11_handle.drm_node().expect("Could not get DRM node used by X server");
@@ -39,12 +37,15 @@ pub fn run_x11_client() {
     let egl_context = egl::EGLContext::new(&egl_display).expect("Failed to create EGLContext");
 
     let window = x11::WindowBuilder::new()
-        .title("Anvil")
+        .title("Wayvern")
         .build(&x11_handle)
         .expect("Failed to create first window");
 
+    let window_size = window.size();
+    let window_size = (window_size.w as i32, window_size.h as i32).into();
+    
     let mode = Mode {
-        size: (window.size().w as i32, window.size().h as i32).into(),
+        size: window_size,
         refresh: 144_000,
     };
     let output = Output::new(
@@ -135,7 +136,6 @@ pub fn run_x11_client() {
             rx_present,
             rx_request_fbo,
             tx_fbo,
-            tx_output_height,
             rx_baton,
             rx_request_external_texture_name,
             tx_external_texture_name,
@@ -148,18 +148,15 @@ pub fn run_x11_client() {
     let backend = X11Backend {
         x11_surface,
         mode: Mode {
-            size: {
-                let s = window.size();
-                (s.w as i32, s.h as i32).into()
-            },
+            size: window_size,
             refresh: 144_000,
         },
     };
 
     let mut common = Common::new(
-        display,
-        loop_handle,
-        event_loop.get_signal(),
+        display_handle,
+        loop_handle.clone(),
+        loop_signal,
         "x11".to_string(),
         dmabuf_state,
         flutter_engine,
@@ -171,9 +168,8 @@ pub fn run_x11_client() {
         gl,
     );
 
-    let size = window.size();
-    tx_output_height.send(size.h).unwrap();
-    common.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
+    let window_size = (window_size.w as u32, window_size.h as u32).into();
+    common.flutter_engine.set_canvas_size(window_size, true).unwrap();
 
     // Mandatory formats by the Wayland spec.
     // TODO: Add more formats based on the GLES version.
@@ -182,50 +178,28 @@ pub fn run_x11_client() {
         wl_shm::Format::Xrgb8888,
     ]);
 
-    let mut state = State {
-        common,
-        backend: Backend::X11(backend),
-    };
+    loop_handle.insert_source(x11_backend, move |event, _, data: &mut State| match event {
+        X11Event::CloseRequested { .. } => {
+            data.common.should_stop = true;
+        }
+        X11Event::Resized { new_size, .. } => {
+            data.backend.x11().mode = Mode {
+                size: (new_size.w as i32, new_size.h as i32).into(),
+                refresh: 144_000,
+            };
 
-    event_loop
-        .handle()
-        .insert_source(x11_backend, move |event, _, data: &mut State| match event {
-            X11Event::CloseRequested { .. } => {
-                data.common.should_stop = true;
-            }
-            X11Event::Resized { new_size, .. } => {
-                let size = { (new_size.w as i32, new_size.h as i32).into() };
+            output.change_current_state(Some(data.backend.x11().mode), None, None, Some((0, 0).into()));
+            output.set_preferred(mode);
 
-                data.backend.x11().mode = Mode {
-                    size,
-                    refresh: 144_000,
-                };
+            let size = (new_size.w as u32, new_size.h as u32).into();
+            data.common.flutter_engine.set_canvas_size(size, true).unwrap();
+        }
+        X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => data.common.vsync(),
+        X11Event::Input { event, window_id: _ } => handle_input(&event, data),
+        X11Event::Focus { .. } => {}
+    }).unwrap();
 
-                output.change_current_state(Some(data.backend.x11().mode), None, None, Some((0, 0).into()));
-                output.set_preferred(mode);
-
-                let _ = tx_output_height.send(new_size.h);
-                data.common.flutter_engine.send_window_metrics((size.w as u32, size.h as u32).into()).unwrap();
-            }
-            X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                data.common.is_next_vblank_scheduled = false;
-                if let Some(baton) = data.common.baton.take() {
-                    data.common.flutter_engine.on_vsync(baton).unwrap();
-                }
-                let start_time = std::time::Instant::now();
-                for surface in data.common.xdg_shell_state.toplevel_surfaces() {
-                    send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-                }
-                for surface in data.common.xdg_popups.values() {
-                    send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-                }
-            }
-            X11Event::Input { event, window_id: _ } => handle_input(&event, data),
-            X11Event::Focus { .. } => {}
-        })
-        .expect("Failed to insert X11 Backend into event loop");
-
-    event_loop.handle().insert_source(rx_request_fbo, move |_, _, data| {
+    loop_handle.insert_source(rx_request_fbo, move |_, _, data| {
         match data.backend.x11().x11_surface.buffer() {
             Ok((dmabuf, _age)) => {
                 let _ = data.common.tx_fbo.send(Some(dmabuf));
@@ -237,7 +211,7 @@ pub fn run_x11_client() {
         }
     }).unwrap();
 
-    event_loop.handle().insert_source(rx_present, move |_, _, data| {
+    loop_handle.insert_source(rx_present, move |_, _, data| {
         data.common.is_next_vblank_scheduled = true;
         if let Err(err) = data.backend.x11().x11_surface.submit() {
             data.backend.x11().x11_surface.reset_buffers();
@@ -245,16 +219,15 @@ pub fn run_x11_client() {
         };
     }).unwrap();
 
-    event_loop.run(None, &mut state, |state: &mut State| {
-        if state.common.should_stop {
-            info!("Shutting down");
-            state.common.loop_signal.stop();
-            state.common.loop_signal.wakeup();
-            return;
-        }
+    let mut state = State {
+        common,
+        backend: Backend::X11(backend),
+    };
 
-        let _ = state.common.display_handle.flush_clients();
-    }).unwrap();
+    // Make sure clients won't try to connect to the existing X server.
+    remove_var("DISPLAY");
+
+    run_event_loop(&mut event_loop, &mut state);
 }
 
 pub struct X11Backend {

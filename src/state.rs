@@ -5,4 +5,3 @@ pub struct State {
     pub common: Common,
     pub backend: Backend,
 }
-

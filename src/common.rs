@@ -1,42 +1,35 @@
-use std::collections::HashMap;
-use std::env::{remove_var, set_var};
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::flutter_engine::{Baton, FlutterEngine, KeyEvent};
+use crate::input_handling::register_flutter_handled_key_event_handler;
+use crate::platform_message_handler::register_platform_message_handler;
+use crate::state::State;
+use crate::texture_swap_chain::TextureSwapChain;
+use platform_channels::encodable_value::EncodableValue;
+use platform_channels::method_call::MethodCall;
+use platform_channels::method_channel::MethodChannel;
+use platform_channels::method_result::MethodResult;
+use platform_channels::standard_method_codec::StandardMethodCodec;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::ffi::{Gles2, RGBA8};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::input::pointer::{PointerHandle};
-use smithay::input::{Seat, SeatState};
 use smithay::input::keyboard::KeyboardHandle;
+use smithay::input::pointer::PointerHandle;
+use smithay::input::{Seat, SeatState};
 use smithay::reexports::calloop::channel::Event::Msg;
-use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{channel, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::calloop::channel::{Channel, Sender};
+use smithay::reexports::calloop::{channel, LoopHandle, LoopSignal};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{Buffer as BufferCoords, Clock, Monotonic, Size};
-use smithay::wayland::compositor::CompositorState;
+use smithay::utils::{Clock, Monotonic};
+use smithay::wayland::compositor::{with_surface_tree_downward, CompositorState, SurfaceAttributes, TraversalAction};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
-use smithay::wayland::socket::ListeningSocketSource;
-use tracing::{info, warn};
-use platform_channels::encodable_value::EncodableValue;
-use platform_channels::method_call::MethodCall;
-use platform_channels::method_channel::MethodChannel;
-use platform_channels::method_result::MethodResult;
-use platform_channels::standard_method_codec::StandardMethodCodec;
-use crate::flutter_engine::{Baton, FlutterEngine, KeyEvent};
-use crate::texture_swap_chain::TextureSwapChain;
-use crate::{ClientState};
-use crate::input_handling::register_flutter_handled_key_event_handler;
-use crate::platform_message_handler::register_platform_message_handler;
-use crate::state::State;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 pub struct Common {
     pub should_stop: bool,
@@ -81,7 +74,7 @@ pub struct Common {
 
 impl Common {
     pub fn new(
-        display: Display<State>,
+        display_handle: DisplayHandle,
         loop_handle: LoopHandle<'static, State>,
         loop_signal: LoopSignal,
         seat_name: String,
@@ -94,7 +87,6 @@ impl Common {
         gles_renderer: GlesRenderer,
         gl: Gles2,
     ) -> Common {
-        let display_handle = display.handle();
         let clock = Clock::new();
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
@@ -108,28 +100,6 @@ impl Common {
         let pointer = seat.add_pointer();
 
         let data_device_state = DataDeviceState::new::<State>(&display_handle);
-
-        let source = ListeningSocketSource::new_auto().unwrap();
-        let socket_name = source.socket_name().to_string_lossy().into_owned();
-
-        loop_handle
-            .insert_source(source, |client_stream, _, data| {
-                if let Err(err) = data
-                    .common.display_handle
-                    .insert_client(client_stream, Arc::new(ClientState::default()))
-                {
-                    warn!("Error adding wayland client: {}", err);
-                };
-            })
-            .expect("Failed to init wayland socket source");
-
-        info!(name = socket_name, "Listening on wayland socket");
-
-        remove_var("DISPLAY");
-        set_var("WAYLAND_DISPLAY", &socket_name);
-        set_var("XDG_SESSION_TYPE", "wayland");
-        set_var("GDK_BACKEND", "wayland"); // Force GTK apps to run on Wayland.
-        set_var("QT_QPA_PLATFORM", "wayland"); // Force QT apps to run on Wayland.
 
         let (tx_platform_message, rx_platform_message) = channel::channel::<(MethodCall, Box<dyn MethodResult>)>();
 
@@ -149,15 +119,6 @@ impl Common {
         let (tx_flutter_handled_key_event, rx_flutter_handled_key_event) = channel::channel::<(KeyEvent, bool)>();
 
         register_flutter_handled_key_event_handler(&loop_handle, rx_flutter_handled_key_event);
-
-        loop_handle.insert_source(Generic::new(display, Interest::READ, Mode::Level), |_, display, data| {
-            profiling::scope!("dispatch_clients");
-            // Safety: we don't drop the display
-            unsafe {
-                display.get_mut().dispatch_clients(data).unwrap();
-            }
-            Ok(PostAction::Continue)
-        }).unwrap();
 
         loop_handle.insert_source(rx_baton, move |baton, _, data| {
             if let Msg(baton) = baton {
@@ -224,9 +185,7 @@ impl Common {
     pub(crate) fn now_ms(&self) -> u32 {
         Duration::from(self.clock.now()).as_millis() as u32
     }
-}
 
-impl Common {
     pub fn get_new_view_id(&mut self) -> u64 {
         let view_id = self.next_view_id;
         self.next_view_id += 1;
@@ -238,9 +197,40 @@ impl Common {
         self.next_texture_id += 1;
         texture_id
     }
+
+    pub fn vsync(&mut self) {
+        self.is_next_vblank_scheduled = false;
+
+        if let Some(baton) = self.baton.take() {
+            self.flutter_engine.on_vsync(baton).unwrap();
+        }
+
+        let toplevel_surfaces = self.xdg_shell_state.toplevel_surfaces().iter().map(|toplevel| toplevel.wl_surface());
+        let popup_surfaces = self.xdg_popups.values().map(|popup| popup.wl_surface());
+        let surfaces = toplevel_surfaces.chain(popup_surfaces);
+
+        for surface in surfaces {
+            send_frames_surface_tree(surface, Instant::now().elapsed().as_millis() as u32);
+        }
+    }
 }
 
-pub struct MySurfaceState {
-    pub view_id: u64,
-    pub old_texture_size: Option<Size<i32, BufferCoords>>,
+fn send_frames_surface_tree(surface: &WlSurface, time: u32) {
+    with_surface_tree_downward(
+        surface,
+        (),
+        |_, _, &()| TraversalAction::DoChildren(()),
+        |_surf, states, &()| {
+            for callback in states
+                .cached_state
+                .get::<SurfaceAttributes>()
+                .current()
+                .frame_callbacks
+                .drain(..)
+            {
+                callback.done(time);
+            }
+        },
+        |_, _, &()| true,
+    );
 }

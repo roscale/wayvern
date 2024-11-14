@@ -82,18 +82,14 @@ pub unsafe extern "C" fn populate_existing_damage(_user_data: *mut c_void, _fbo_
 pub unsafe extern "C" fn surface_transformation(user_data: *mut c_void) -> FlutterTransformation {
     let flutter_engine = &mut *(user_data as *mut FlutterEngine);
 
-    while let Ok(output_height) = flutter_engine.data.channels.rx_output_height.try_recv() {
-        flutter_engine.data.output_height = Some(output_height);
-    }
-
-    match flutter_engine.data.output_height {
-        Some(output_height) => FlutterTransformation {
+    match flutter_engine.data.canvas_height {
+        Some(canvas_height) => FlutterTransformation {
             scaleX: 1.0,
             skewX: 0.0,
             transX: 0.0,
             skewY: 0.0,
             scaleY: -1.0,
-            transY: output_height as f64,
+            transY: canvas_height as f64,
             pers0: 0.0,
             pers1: 0.0,
             pers2: 1.0,

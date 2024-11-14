@@ -89,7 +89,6 @@ impl FlutterEngine {
         let (tx_present, rx_present) = channel::channel::<()>();
         let (tx_request_fbo, rx_request_fbo) = channel::channel::<()>();
         let (tx_fbo, rx_fbo) = channel::channel::<Option<Dmabuf>>();
-        let (tx_output_height, rx_output_height) = channel::channel::<u16>();
         let (tx_baton, rx_baton) = channel::channel::<Baton>();
         let (tx_reschedule_task_runner_timer, rx_reschedule_task_runner_timer) = channel::channel::<Duration>();
         let (tx_request_external_texture_name, rx_request_external_texture_name) = channel::channel::<i64>();
@@ -99,7 +98,6 @@ impl FlutterEngine {
             tx_present,
             tx_request_fbo,
             rx_fbo,
-            rx_output_height,
             tx_baton,
             tx_request_external_texture_name,
             rx_external_texture_name,
@@ -109,7 +107,6 @@ impl FlutterEngine {
             rx_present,
             rx_request_fbo,
             tx_fbo,
-            tx_output_height,
             rx_baton,
             rx_request_external_texture_name,
             tx_external_texture_name,
@@ -261,7 +258,11 @@ impl FlutterEngine {
         unsafe { FlutterEngineGetCurrentTime() / 1000 }
     }
 
-    pub fn send_window_metrics(&self, size: Size<u32, Physical>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn set_canvas_size(&mut self, size: Size<u32, Physical>, y_flipped: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if y_flipped {
+            self.data.canvas_height = Some(size.h);
+        }
+
         let event = FlutterWindowMetricsEvent {
             struct_size: size_of::<FlutterWindowMetricsEvent>(),
             width: size.w as usize,
@@ -431,7 +432,7 @@ struct FlutterEngineData {
     gl: Gles2,
     main_egl_context: EGLContext,
     resource_egl_context: EGLContext,
-    output_height: Option<u16>,
+    canvas_height: Option<u32>,
     channels: FlutterEngineChannels,
     framebuffer_importer: GlesFramebufferImporter,
 }
@@ -458,7 +459,7 @@ impl FlutterEngineData {
             gl: Gles2::load_with(|s| unsafe { egl::get_proc_address(s) } as *const _),
             main_egl_context: EGLContext::new_shared_with_config(&egl_display, &root_egl_context, gl_attributes, pixel_format_requirements)?,
             resource_egl_context: EGLContext::new_shared_with_config(&egl_display, &root_egl_context, gl_attributes, pixel_format_requirements)?,
-            output_height: None,
+            canvas_height: None,
             channels,
             framebuffer_importer: unsafe { GlesFramebufferImporter::new(egl_display.clone())? },
         })
@@ -469,7 +470,6 @@ pub struct FlutterEngineChannels {
     tx_present: channel::Sender<()>,
     tx_request_fbo: channel::Sender<()>,
     rx_fbo: channel::Channel<Option<Dmabuf>>,
-    rx_output_height: channel::Channel<u16>,
     tx_baton: channel::Sender<Baton>,
     tx_request_external_texture_name: channel::Sender<i64>,
     rx_external_texture_name: channel::Channel<(u32, u32)>,
@@ -479,7 +479,6 @@ pub struct EmbedderChannels {
     pub rx_present: channel::Channel<()>,
     pub rx_request_fbo: channel::Channel<()>,
     pub tx_fbo: channel::Sender<Option<Dmabuf>>,
-    pub tx_output_height: channel::Sender<u16>,
     pub rx_baton: channel::Channel<Baton>,
     pub rx_request_external_texture_name: channel::Channel<i64>,
     pub tx_external_texture_name: channel::Sender<(u32, u32)>,

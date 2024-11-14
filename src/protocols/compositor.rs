@@ -1,18 +1,19 @@
 use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
-use crate::common::MySurfaceState;
-use crate::ClientState;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
 use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::delegate_compositor;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
-use smithay::utils::Rectangle;
+use smithay::utils::{Rectangle, Size};
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::{with_states, with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction};
 use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use std::cell::RefCell;
+use std::ops::Deref;
+use smithay::reexports::wayland_server::backend::ClientData;
+use smithay::utils::{Buffer as BufferCoords};
 use crate::state::State;
 
 delegate_compositor!(State);
@@ -29,10 +30,10 @@ impl CompositorHandler for State {
     fn new_surface(&mut self, surface: &WlSurface) {
         let view_id = self.common.get_new_view_id();
         with_states(surface, |surface_data| {
-            surface_data.data_map.insert_if_missing(|| RefCell::new(MySurfaceState {
+            surface_data.data_map.insert_if_missing(|| MySurfaceState(RefCell::new(MySurfaceStateInner {
                 view_id,
                 old_texture_size: None,
-            }));
+            })));
         });
         self.common.surfaces.insert(view_id, surface.clone());
 
@@ -49,11 +50,11 @@ impl CompositorHandler for State {
 
     fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
         let view_id = with_states(surface, |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         let parent_view_id = with_states(parent, |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         self.common.flutter_engine.invoke_method(
@@ -76,7 +77,7 @@ impl CompositorHandler for State {
 
             let mut state = surface_data.cached_state.get::<SurfaceAttributes>();
             let state = state.current();
-            let my_state = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap();
+            let my_state = surface_data.data_map.get::<MySurfaceState>().unwrap();
 
             let (view_id, old_texture_size) = {
                 let my_state = my_state.borrow();
@@ -167,7 +168,7 @@ impl CompositorHandler for State {
                         let popup_data = surface_data.data_map.get::<XdgPopupSurfaceData>().unwrap().lock().unwrap();
                         let parent_id = popup_data.parent.as_ref().map(|surface| {
                             with_states(surface, |surface_data| {
-                                surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+                                surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
                             })
                         }).unwrap_or(0);
 
@@ -208,7 +209,7 @@ impl CompositorHandler for State {
                 return;
             }
 
-            let view_id = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id;
+            let view_id = surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id;
             if above {
                 subsurfaces_above.push(view_id);
             } else {
@@ -232,7 +233,7 @@ impl CompositorHandler for State {
 
     fn destroyed(&mut self, _surface: &WlSurface) {
         let view_id = with_states(_surface, |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
         self.common.surfaces.remove(&view_id);
 
@@ -251,7 +252,7 @@ impl CompositorHandler for State {
 impl State {
     fn send_initial_configure(&self, surface: &WlSurface) {
         let view_id = with_states(surface, |states| {
-            states.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            states.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         if let Some(toplevel) = self.common.xdg_toplevels.get(&view_id) {
@@ -287,5 +288,27 @@ impl State {
                 popup.send_configure().expect("initial configure failed");
             }
         }
+    }
+}
+
+#[derive(Default)]
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
+
+impl ClientData for ClientState {}
+
+pub struct MySurfaceState(RefCell<MySurfaceStateInner>);
+
+pub struct MySurfaceStateInner {
+    pub view_id: u64,
+    pub old_texture_size: Option<Size<i32, BufferCoords>>,
+}
+
+impl Deref for MySurfaceState {
+    type Target = RefCell<MySurfaceStateInner>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

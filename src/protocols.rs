@@ -1,4 +1,4 @@
-mod compositor;
+pub mod compositor;
 mod xdg_shell;
 mod output;
 mod seat;

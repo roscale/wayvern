@@ -1,4 +1,3 @@
-use crate::common::MySurfaceState;
 use crate::state::State;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
@@ -9,7 +8,7 @@ use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
-use std::cell::RefCell;
+use crate::protocols::compositor::MySurfaceState;
 
 delegate_xdg_shell!(State);
 
@@ -20,7 +19,7 @@ impl XdgShellHandler for State {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
         self.common.xdg_toplevels.insert(view_id, surface.clone());
 
@@ -41,14 +40,14 @@ impl XdgShellHandler for State {
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
         let (view_id, parent) = with_states(_surface.wl_surface(), |surface_data| {
-            let my_surface_data = surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow();
+            let my_surface_data = surface_data.data_map.get::<MySurfaceState>().unwrap().borrow();
             let xdg_popup_surface_data = surface_data.data_map.get::<XdgPopupSurfaceData>().unwrap().lock().unwrap();
 
             (my_surface_data.view_id, xdg_popup_surface_data.parent.clone().unwrap())
         });
 
         let parent_view_id = with_states(&parent, |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         self.common.xdg_popups.insert(view_id, _surface.clone());
@@ -67,7 +66,7 @@ impl XdgShellHandler for State {
 
     fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, _serial: Serial) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         self.common.flutter_engine.invoke_method(
@@ -83,7 +82,7 @@ impl XdgShellHandler for State {
 
     fn resize_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, _serial: Serial, edges: ResizeEdge) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
 
         self.common.flutter_engine.invoke_method(
@@ -109,7 +108,7 @@ impl XdgShellHandler for State {
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         let view_id = with_states(surface.wl_surface(), |surface_data| {
-            surface_data.data_map.get::<RefCell<MySurfaceState>>().unwrap().borrow().view_id
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
         self.common.xdg_toplevels.remove(&view_id);
     }
