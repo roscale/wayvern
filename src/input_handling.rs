@@ -77,8 +77,12 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut State) {
                 y: data.common.mouse_position.1,
                 device: 0,
                 signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindScroll,
-                scroll_delta_x: event.amount_v120(input::Axis::Horizontal).unwrap_or(0.0) * 10.0,
-                scroll_delta_y: event.amount_v120(input::Axis::Vertical).unwrap_or(0.0) * 10.0,
+                scroll_delta_x: event.amount_v120(input::Axis::Horizontal)
+                    .or(event.amount(input::Axis::Horizontal))
+                    .unwrap_or(0.0),
+                scroll_delta_y: event.amount_v120(input::Axis::Vertical)
+                    .or(event.amount(input::Axis::Vertical))
+                    .unwrap_or(0.0),
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
                 buttons: data.common.flutter_engine.mouse_button_tracker.get_flutter_button_bitmask(),
                 pan_x: 0.0,
