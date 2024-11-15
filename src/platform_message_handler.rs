@@ -70,7 +70,7 @@ pub fn register_platform_message_handler(
                             let button = buttons & mask;
                             if button != 0 {
                                 data.mouse_button_event(
-                                    *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
+                                    *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&button).unwrap() as u32,
                                     is_pressed,
                                 );
                             }
@@ -95,6 +95,16 @@ pub fn register_platform_message_handler(
                         let height = get_value(args, "height").long_value().unwrap() as i32;
 
                         data.resize_window(view_id, width, height);
+
+                        result.success(None);
+                    }
+                    "close_window" => {
+                        let args = method_call.arguments().unwrap();
+                        let view_id = get_value(args, "view_id").long_value().unwrap() as u64;
+
+                        if let Some(toplevel) = data.common.xdg_toplevels.get(&view_id) {
+                            toplevel.send_close();
+                        }
 
                         result.success(None);
                     }
