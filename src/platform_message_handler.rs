@@ -62,13 +62,19 @@ pub fn register_platform_message_handler(
                     }
                     "mouse_button_event" => {
                         let args = method_call.arguments().unwrap();
-                        let button = get_value(args, "button").long_value().unwrap() as u32;
+                        let buttons = get_value(args, "buttons").long_value().unwrap() as u32;
                         let is_pressed = *extract!(get_value(args, "is_pressed"), EncodableValue::Bool);
 
-                        data.mouse_button_event(
-                            *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
-                            is_pressed,
-                        );
+                        for i in 0..size_of_val(&buttons) * 8 {
+                            let mask = 1 << i;
+                            let button = buttons & mask;
+                            if button != 0 {
+                                data.mouse_button_event(
+                                    *FLUTTER_TO_LINUX_MOUSE_BUTTONS.get(&(button)).unwrap() as u32,
+                                    is_pressed,
+                                );
+                            }
+                        }
 
                         result.success(None);
                     }
@@ -201,7 +207,7 @@ impl State {
         });
         surface.send_pending_configure();
     }
-    
+
     pub fn unregister_view_texture(&mut self, texture_id: i64) {
         self.common.flutter_engine.unregister_external_texture(texture_id).unwrap();
     }

@@ -15,10 +15,10 @@ class MouseButtonTracker {
     if (buttons == newButtons) {
       return null;
     }
-    var button = buttons ^ newButtons;
-    var state = newButtons & button != 0 ? MouseButtonState.pressed : MouseButtonState.released;
+    var diff = buttons ^ newButtons;
+    var state = newButtons & diff != 0 ? MouseButtonState.pressed : MouseButtonState.released;
     buttons = newButtons;
-    return MouseButtonEvent(button, state);
+    return MouseButtonEvent(diff, state);
   }
 }
 
@@ -28,13 +28,13 @@ enum MouseButtonState {
 }
 
 class MouseButtonEvent {
-  int button;
+  int buttons;
   MouseButtonState state;
 
-  MouseButtonEvent(this.button, this.state);
+  MouseButtonEvent(this.buttons, this.state);
 
   @override
   String toString() {
-    return 'MouseButtonEvent{button: $button, state: $state}';
+    return 'MouseButtonEvent{button: $buttons, state: $state}';
   }
 }

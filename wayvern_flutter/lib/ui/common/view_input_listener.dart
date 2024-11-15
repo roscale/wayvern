@@ -137,8 +137,8 @@ class ViewInputListener extends ConsumerWidget {
   }
 
   Future<void> _mouseButtonEvent(WidgetRef ref, MouseButtonEvent event) {
-    return ref.read(platformApiProvider.notifier).sendMouseButtonEventToView(
-        event.button, event.state == MouseButtonState.pressed);
+    return ref.read(platformApiProvider.notifier).sendMouseButtonsEventToView(
+        event.buttons, event.state == MouseButtonState.pressed);
   }
 
   Future<void> _pointerMoved(WidgetRef ref, Offset position) {

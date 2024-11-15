@@ -145,11 +145,11 @@ class PlatformApi extends _$PlatformApi {
     });
   }
 
-  Future<void> sendMouseButtonEventToView(int button, bool isPressed) {
+  Future<void> sendMouseButtonsEventToView(int buttons, bool isPressed) {
     // One might find surprising that the view id is not sent to the platform. This is because the view id is only sent
     // when the pointer moves, and when a button event happens, the platform already knows which view it hovers.
     return state.platform.invokeMethod("mouse_button_event", {
-      "button": button,
+      "buttons": buttons,
       "is_pressed": isPressed,
     });
   }

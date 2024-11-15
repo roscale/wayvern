@@ -5,9 +5,10 @@ use embedder_sys::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, Flut
 use input_linux::sys::KEY_ESC;
 use log::error;
 use smithay::backend::input;
-use smithay::backend::input::{AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
+use smithay::backend::input::{AbsolutePositionEvent, Axis, ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
 use smithay::backend::session::Session;
 use smithay::input::keyboard::{Keycode, Keysym};
+use smithay::input::pointer::AxisFrame;
 use smithay::reexports::calloop::channel::Channel;
 use smithay::reexports::calloop::channel::Event::Msg;
 use smithay::reexports::calloop::LoopHandle;
@@ -65,6 +66,24 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut State) {
             }).unwrap();
         }
         InputEvent::PointerAxis { event } => {
+            let pointer = data.common.pointer.clone();
+            pointer.axis(
+                data,
+                AxisFrame {
+                    source: Some(event.source()),
+                    relative_direction: (event.relative_direction(Axis::Horizontal), event.relative_direction(Axis::Vertical)),
+                    time: data.common.now_ms(),
+                    axis: (event.amount(Axis::Horizontal).or(event.amount_v120(Axis::Horizontal)).unwrap_or(0.0),
+                           event.amount(Axis::Vertical).or(event.amount_v120(Axis::Vertical)).unwrap_or(0.0)),
+                    v120: match (event.amount_v120(Axis::Horizontal), event.amount_v120(Axis::Vertical)) {
+                        (None, None) => None,
+                        (h, v) => Some((h.unwrap_or(0.0) as i32, v.unwrap_or(0.0) as i32)),
+                    },
+                    stop: (false, false),
+                },
+            );
+            pointer.frame(data);
+
             data.common.flutter_engine.send_pointer_event(FlutterPointerEvent {
                 struct_size: size_of::<FlutterPointerEvent>(),
                 phase: if data.common.flutter_engine.mouse_button_tracker.are_any_buttons_pressed() {
@@ -77,11 +96,11 @@ pub fn handle_input(event: &InputEvent<impl InputBackend>, data: &mut State) {
                 y: data.common.mouse_position.1,
                 device: 0,
                 signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindScroll,
-                scroll_delta_x: event.amount_v120(input::Axis::Horizontal)
-                    .or(event.amount(input::Axis::Horizontal))
+                scroll_delta_x: event.amount_v120(Axis::Horizontal)
+                    .or(event.amount(Axis::Horizontal))
                     .unwrap_or(0.0),
-                scroll_delta_y: event.amount_v120(input::Axis::Vertical)
-                    .or(event.amount(input::Axis::Vertical))
+                scroll_delta_y: event.amount_v120(Axis::Vertical)
+                    .or(event.amount(Axis::Vertical))
                     .unwrap_or(0.0),
                 device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
                 buttons: data.common.flutter_engine.mouse_button_tracker.get_flutter_button_bitmask(),
@@ -152,7 +171,6 @@ impl State {
     pub fn handle_key_event(&mut self, key_code: Keycode, state: KeyState) {
         let keyboard = self.common.keyboard.clone();
 
-        print!("Key event: {:?} {:?}", key_code, state);
         if state == KeyState::Pressed && key_code.raw() as i32 == 9 {
             self.common.should_stop = true;
             return;
