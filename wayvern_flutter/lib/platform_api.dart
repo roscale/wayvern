@@ -6,13 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:zenith/ui/common/popup_stack.dart';
-import 'package:zenith/ui/common/state/subsurface_state.dart';
-import 'package:zenith/ui/common/state/surface_ids.dart';
 import 'package:zenith/ui/common/state/surface_state.dart';
 import 'package:zenith/ui/common/state/tasks_provider.dart';
 import 'package:zenith/ui/common/state/wayland_state.dart';
-import 'package:zenith/ui/common/state/xdg_popup_state.dart';
 import 'package:zenith/ui/common/state/xdg_surface_state.dart';
 import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
 
@@ -350,7 +346,8 @@ class PlatformApi extends _$PlatformApi {
   SurfaceCommitData _parseSurfaceCommitData(dynamic data) {
     int viewId = data["view_id"];
     dynamic surface = data["surface"];
-    int role = surface["role"];
+    final role = SurfaceRole.values[surface["role"]];
+    dynamic roleState = surface["role_state"];
 
     int textureIdInt = surface["textureId"];
     // TODO: Don't remove the late keyword even if it still compiles !
@@ -392,7 +389,7 @@ class PlatformApi extends _$PlatformApi {
     final subsurfaceIdsAbove = subsurfaceAbove.cast<int>().lockUnsafe;
 
     return SurfaceCommitData(
-      role: SurfaceRole.values[role],
+      role: role,
       textureId: textureId,
       surfacePosition: Offset(x.toDouble(), y.toDouble()),
       surfaceSize: Size(width.toDouble(), height.toDouble()),
@@ -400,17 +397,16 @@ class PlatformApi extends _$PlatformApi {
       subsurfacesBelow: subsurfaceIdsBelow,
       subsurfacesAbove: subsurfaceIdsAbove,
       inputRegion: inputRegionRect,
-      subsurfaceCommitData: _parseSubsurfaceCommitData(data),
-      xdgSurfaceCommitData: _parseXdgSurfaceCommitData(data),
+      subsurfaceCommitData: role == SurfaceRole.subsurface
+          ? _parseSubsurfaceCommitData(roleState)
+          : null,
+      xdgSurfaceCommitData: role == SurfaceRole.xdgSurface
+          ? _parseXdgSurfaceCommitData(roleState)
+          : null,
     );
   }
 
-  SubsurfaceCommitData? _parseSubsurfaceCommitData(dynamic data) {
-    dynamic subsurface = data["subsurface"];
-    if (subsurface == null) {
-      return null;
-    }
-
+  SubsurfaceCommitData? _parseSubsurfaceCommitData(dynamic subsurface) {
     int x = subsurface["x"];
     int y = subsurface["y"];
     var position = Offset(x.toDouble(), y.toDouble());
@@ -419,13 +415,9 @@ class PlatformApi extends _$PlatformApi {
     );
   }
 
-  XdgSurfaceCommitData? _parseXdgSurfaceCommitData(dynamic data) {
-    dynamic xdgSurface = data["xdg_surface"];
-    if (xdgSurface == null) {
-      return null;
-    }
-
-    int role = xdgSurface["role"];
+  XdgSurfaceCommitData? _parseXdgSurfaceCommitData(dynamic xdgSurface) {
+    final role = XdgSurfaceRole.values[xdgSurface["role"]];
+    dynamic roleState = xdgSurface["role_state"];
     int x = xdgSurface["x"];
     int y = xdgSurface["y"];
     int width = xdgSurface["width"];
@@ -437,19 +429,29 @@ class PlatformApi extends _$PlatformApi {
       height.toDouble(),
     );
     return XdgSurfaceCommitData(
-      role: XdgSurfaceRole.values[role],
+      role: role,
       visibleBounds: visibleBounds,
-      xdgPopupCommitData: _parseXdgPopupCommitData(data),
+      xdgToplevelCommitData: role == XdgSurfaceRole.toplevel
+          ? _parseXdgToplevelCommitData(roleState)
+          : null,
+      xdgPopupCommitData: role == XdgSurfaceRole.popup
+          ? _parseXdgPopupCommitData(roleState)
+          : null,
     );
   }
 
-  // parse popup
-  XdgPopupCommitData? _parseXdgPopupCommitData(dynamic data) {
-    dynamic xdgPopup = data["xdg_popup"];
-    if (xdgPopup == null) {
-      return null;
-    }
+  XdgToplevelCommitData? _parseXdgToplevelCommitData(dynamic xdgToplevel) {
+    int? decorationInt = xdgToplevel["decoration"];
+    final decoration = decorationInt == null
+        ? null
+        : ToplevelDecoration.fromInt(decorationInt);
 
+    return XdgToplevelCommitData(
+      decoration: decoration,
+    );
+  }
+
+  XdgPopupCommitData? _parseXdgPopupCommitData(dynamic xdgPopup) {
     int x = xdgPopup["x"];
     int y = xdgPopup["y"];
     var position = Offset(x.toDouble(), y.toDouble());

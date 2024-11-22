@@ -20,8 +20,7 @@ class WithDecorations extends ConsumerWidget {
     var decoration = ref.watch(waylandProviderProvider
         .select((v) => v.xdgToplevels[viewId]!.decoration));
     switch (decoration) {
-      case ToplevelDecoration.none:
-      case ToplevelDecoration.clientSide:
+      case null || ToplevelDecoration.clientSide:
         return ClientSideDecorations(
           viewId: viewId,
           child: child,

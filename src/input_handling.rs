@@ -4,7 +4,6 @@ use crate::flutter_engine::{FlutterEngine, KeyEvent};
 use embedder_sys::{FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse, FlutterPointerEvent, FlutterPointerPhase_kDown, FlutterPointerPhase_kHover, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp, FlutterPointerSignalKind_kFlutterPointerSignalKindNone, FlutterPointerSignalKind_kFlutterPointerSignalKindScroll};
 use input_linux::sys::KEY_ESC;
 use log::error;
-use smithay::backend::input;
 use smithay::backend::input::{AbsolutePositionEvent, Axis, ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent};
 use smithay::backend::session::Session;
 use smithay::input::keyboard::{Keycode, Keysym};

@@ -1,3 +1,4 @@
+use crate::protocols::compositor::MySurfaceState;
 use crate::state::State;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
@@ -8,7 +9,6 @@ use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
-use crate::protocols::compositor::MySurfaceState;
 
 delegate_xdg_shell!(State);
 

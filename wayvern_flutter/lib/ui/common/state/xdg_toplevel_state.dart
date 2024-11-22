@@ -20,7 +20,7 @@ class XdgToplevelState with _$XdgToplevelState {
     required FocusNode focusNode,
     required Object interactiveMoveRequested,
     required ResizeEdgeObject interactiveResizeRequested,
-    required ToplevelDecoration decoration,
+    required ToplevelDecoration? decoration,
     required String title,
     required String appId,
     required Tiling? tilingRequested,
@@ -68,20 +68,17 @@ class ResizeEdgeObject {
 }
 
 enum ToplevelDecoration {
-  none,
   clientSide,
   serverSide;
 
   static ToplevelDecoration fromInt(int n) {
     switch (n) {
-      case 0:
-        return none;
       case 1:
         return clientSide;
       case 2:
         return serverSide;
       default:
-        return none;
+        throw ArgumentError('Invalid ToplevelDecoration value: $n');
     }
   }
 }

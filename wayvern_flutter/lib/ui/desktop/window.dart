@@ -102,9 +102,9 @@ class _WindowState extends ConsumerState<Window>
         final decoration = ref.watch(waylandProviderProvider
             .select((v) => v.xdgToplevels[widget.viewId]!.decoration));
         var offset = Offset.zero;
+
         switch (decoration) {
-          case ToplevelDecoration.none:
-          case ToplevelDecoration.clientSide:
+          case null || ToplevelDecoration.clientSide:
             final visibleBounds = ref.watch(waylandProviderProvider
                 .select((v) => v.xdgSurfaces[widget.viewId]!.visibleBounds));
             offset = visibleBounds.topLeft;

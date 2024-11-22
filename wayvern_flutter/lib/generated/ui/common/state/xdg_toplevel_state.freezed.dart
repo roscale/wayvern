@@ -22,7 +22,7 @@ mixin _$XdgToplevelState {
   Object get interactiveMoveRequested => throw _privateConstructorUsedError;
   ResizeEdgeObject get interactiveResizeRequested =>
       throw _privateConstructorUsedError;
-  ToplevelDecoration get decoration => throw _privateConstructorUsedError;
+  ToplevelDecoration? get decoration => throw _privateConstructorUsedError;
   String get title => throw _privateConstructorUsedError;
   String get appId => throw _privateConstructorUsedError;
   Tiling? get tilingRequested => throw _privateConstructorUsedError;
@@ -46,7 +46,7 @@ abstract class $XdgToplevelStateCopyWith<$Res> {
       FocusNode focusNode,
       Object interactiveMoveRequested,
       ResizeEdgeObject interactiveResizeRequested,
-      ToplevelDecoration decoration,
+      ToplevelDecoration? decoration,
       String title,
       String appId,
       Tiling? tilingRequested});
@@ -72,7 +72,7 @@ class _$XdgToplevelStateCopyWithImpl<$Res, $Val extends XdgToplevelState>
     Object? focusNode = null,
     Object? interactiveMoveRequested = null,
     Object? interactiveResizeRequested = null,
-    Object? decoration = null,
+    Object? decoration = freezed,
     Object? title = null,
     Object? appId = null,
     Object? tilingRequested = freezed,
@@ -97,10 +97,10 @@ class _$XdgToplevelStateCopyWithImpl<$Res, $Val extends XdgToplevelState>
           ? _value.interactiveResizeRequested
           : interactiveResizeRequested // ignore: cast_nullable_to_non_nullable
               as ResizeEdgeObject,
-      decoration: null == decoration
+      decoration: freezed == decoration
           ? _value.decoration
           : decoration // ignore: cast_nullable_to_non_nullable
-              as ToplevelDecoration,
+              as ToplevelDecoration?,
       title: null == title
           ? _value.title
           : title // ignore: cast_nullable_to_non_nullable
@@ -131,7 +131,7 @@ abstract class _$$XdgToplevelStateImplCopyWith<$Res>
       FocusNode focusNode,
       Object interactiveMoveRequested,
       ResizeEdgeObject interactiveResizeRequested,
-      ToplevelDecoration decoration,
+      ToplevelDecoration? decoration,
       String title,
       String appId,
       Tiling? tilingRequested});
@@ -155,7 +155,7 @@ class __$$XdgToplevelStateImplCopyWithImpl<$Res>
     Object? focusNode = null,
     Object? interactiveMoveRequested = null,
     Object? interactiveResizeRequested = null,
-    Object? decoration = null,
+    Object? decoration = freezed,
     Object? title = null,
     Object? appId = null,
     Object? tilingRequested = freezed,
@@ -180,10 +180,10 @@ class __$$XdgToplevelStateImplCopyWithImpl<$Res>
           ? _value.interactiveResizeRequested
           : interactiveResizeRequested // ignore: cast_nullable_to_non_nullable
               as ResizeEdgeObject,
-      decoration: null == decoration
+      decoration: freezed == decoration
           ? _value.decoration
           : decoration // ignore: cast_nullable_to_non_nullable
-              as ToplevelDecoration,
+              as ToplevelDecoration?,
       title: null == title
           ? _value.title
           : title // ignore: cast_nullable_to_non_nullable
@@ -225,7 +225,7 @@ class _$XdgToplevelStateImpl implements _XdgToplevelState {
   @override
   final ResizeEdgeObject interactiveResizeRequested;
   @override
-  final ToplevelDecoration decoration;
+  final ToplevelDecoration? decoration;
   @override
   final String title;
   @override
@@ -292,7 +292,7 @@ abstract class _XdgToplevelState implements XdgToplevelState {
       required final FocusNode focusNode,
       required final Object interactiveMoveRequested,
       required final ResizeEdgeObject interactiveResizeRequested,
-      required final ToplevelDecoration decoration,
+      required final ToplevelDecoration? decoration,
       required final String title,
       required final String appId,
       required final Tiling? tilingRequested}) = _$XdgToplevelStateImpl;
@@ -308,7 +308,7 @@ abstract class _XdgToplevelState implements XdgToplevelState {
   @override
   ResizeEdgeObject get interactiveResizeRequested;
   @override
-  ToplevelDecoration get decoration;
+  ToplevelDecoration? get decoration;
   @override
   String get title;
   @override

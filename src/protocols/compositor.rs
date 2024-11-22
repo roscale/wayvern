@@ -1,10 +1,13 @@
-use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, XdgPopupCommitMessage, XdgSurfaceCommitMessage};
+use crate::flutter_engine::wayland_messages::{SubsurfaceCommitMessage, SurfaceCommitMessage, WlSurfaceRoleState, XdgPopupCommitMessage, XdgSurfaceCommitMessage, XdgSurfaceRoleState, XdgToplevelCommitMessage};
+use crate::state::State;
 use platform_channels::encodable_value::EncodableValue;
 use platform_channels::standard_method_codec::StandardMethodCodec;
 use smithay::backend::renderer::{ImportAll, Texture};
 use smithay::delegate_compositor;
+use smithay::reexports::wayland_server::backend::ClientData;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
+use smithay::utils::Buffer as BufferCoords;
 use smithay::utils::{Rectangle, Size};
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::{with_states, with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SubsurfaceCachedState, SurfaceAttributes, TraversalAction};
@@ -12,9 +15,6 @@ use smithay::wayland::shell::xdg;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use std::cell::RefCell;
 use std::ops::Deref;
-use smithay::reexports::wayland_server::backend::ClientData;
-use smithay::utils::{Buffer as BufferCoords};
-use crate::state::State;
 
 delegate_compositor!(State);
 
@@ -139,7 +139,12 @@ impl CompositorHandler for State {
                 buffer_size: size,
                 scale: state.buffer_scale,
                 input_region: state.input_region.clone(),
-                xdg_surface: match role {
+                role_state: match role {
+                    Some(compositor::SUBSURFACE_ROLE) => {
+                        Some(WlSurfaceRoleState::Subsurface(SubsurfaceCommitMessage {
+                            location: surface_data.cached_state.get::<SubsurfaceCachedState>().current().location,
+                        }))
+                    }
                     Some(xdg::XDG_TOPLEVEL_ROLE | xdg::XDG_POPUP_ROLE) => {
                         let geometry = surface_data
                             .cached_state
@@ -147,8 +152,33 @@ impl CompositorHandler for State {
                             .current()
                             .geometry;
 
-                        Some(XdgSurfaceCommitMessage {
+                        Some(WlSurfaceRoleState::XdgSurface(XdgSurfaceCommitMessage {
                             role,
+                            role_state: match role {
+                                Some(xdg::XDG_TOPLEVEL_ROLE) => {
+                                    let toplevel_data = surface_data.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap();
+
+                                    Some(XdgSurfaceRoleState::Toplevel(XdgToplevelCommitMessage {
+                                        title: toplevel_data.title.clone(),
+                                        app_id: toplevel_data.app_id.clone(),
+                                        decoration: toplevel_data.current.decoration_mode,
+                                    }))
+                                }
+                                Some(xdg::XDG_POPUP_ROLE) => {
+                                    let popup_data = surface_data.data_map.get::<XdgPopupSurfaceData>().unwrap().lock().unwrap();
+                                    let parent_id = popup_data.parent.as_ref().map(|surface| {
+                                        with_states(surface, |surface_data| {
+                                            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
+                                        })
+                                    }).unwrap_or(0);
+
+                                    Some(XdgSurfaceRoleState::Popup(XdgPopupCommitMessage {
+                                        parent_id,
+                                        geometry: popup_data.current.geometry,
+                                    }))
+                                }
+                                _ => None,
+                            },
                             geometry: match geometry {
                                 Some(geometry) => Some(geometry),
                                 None => Some(Rectangle {
@@ -159,31 +189,7 @@ impl CompositorHandler for State {
                                     },
                                 }),
                             },
-                        })
-                    }
-                    _ => None,
-                },
-                xdg_popup: match role {
-                    Some(xdg::XDG_POPUP_ROLE) => {
-                        let popup_data = surface_data.data_map.get::<XdgPopupSurfaceData>().unwrap().lock().unwrap();
-                        let parent_id = popup_data.parent.as_ref().map(|surface| {
-                            with_states(surface, |surface_data| {
-                                surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
-                            })
-                        }).unwrap_or(0);
-
-                        Some(XdgPopupCommitMessage {
-                            parent_id,
-                            geometry: popup_data.current.geometry,
-                        })
-                    }
-                    _ => None,
-                },
-                subsurface: match role {
-                    Some(compositor::SUBSURFACE_ROLE) => {
-                        Some(SubsurfaceCommitMessage {
-                            location: surface_data.cached_state.get::<SubsurfaceCachedState>().current().location,
-                        })
+                        }))
                     }
                     _ => None,
                 },

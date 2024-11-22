@@ -172,6 +172,7 @@ class WaylandProvider extends _$WaylandProvider {
 
     var xdgSurfaces = state.xdgSurfaces;
     var xdgPopups = state.xdgPopups;
+    var xdgToplevels = state.xdgToplevels;
 
     final xdgSurfaceCommitData = data.xdgSurfaceCommitData;
     if (xdgSurfaceCommitData != null) {
@@ -182,6 +183,16 @@ class WaylandProvider extends _$WaylandProvider {
           visibleBounds: xdgSurfaceCommitData.visibleBounds,
         ),
       );
+
+      final xdgToplevelCommitData = xdgSurfaceCommitData.xdgToplevelCommitData;
+      if (xdgToplevelCommitData != null) {
+        xdgToplevels = xdgToplevels.update(
+          id,
+          (state) => state.copyWith(
+            decoration: xdgToplevelCommitData.decoration,
+          ),
+        );
+      }
 
       final xdgPopupCommitData = xdgSurfaceCommitData.xdgPopupCommitData;
       if (xdgPopupCommitData != null) {
@@ -198,6 +209,7 @@ class WaylandProvider extends _$WaylandProvider {
       surfaces: surfaces,
       subsurfaces: subsurfaces,
       xdgSurfaces: xdgSurfaces,
+      xdgToplevels: xdgToplevels,
       xdgPopups: xdgPopups,
     );
   }
@@ -311,7 +323,7 @@ class WaylandProvider extends _$WaylandProvider {
           focusNode: focusNode,
           interactiveMoveRequested: Object(),
           interactiveResizeRequested: ResizeEdgeObject(ResizeEdge.top),
-          decoration: ToplevelDecoration.serverSide,
+          decoration: null,
           title: "",
           appId: "",
           tilingRequested: null,
@@ -485,11 +497,22 @@ class XdgSurfaceCommitData {
   final Rect visibleBounds;
 
   final XdgPopupCommitData? xdgPopupCommitData;
+  final XdgToplevelCommitData? xdgToplevelCommitData;
 
   const XdgSurfaceCommitData({
     required this.role,
     required this.visibleBounds,
     required this.xdgPopupCommitData,
+    required this.xdgToplevelCommitData,
+  });
+}
+
+@immutable
+class XdgToplevelCommitData {
+  final ToplevelDecoration? decoration;
+
+  const XdgToplevelCommitData({
+    required this.decoration,
   });
 }
 

@@ -30,6 +30,7 @@ use smithay::wayland::shm::ShmState;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 
 pub struct Common {
     pub should_stop: bool,
@@ -44,6 +45,7 @@ pub struct Common {
     pub data_device_state: DataDeviceState,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub xdg_decoration_state: XdgDecorationState,
     pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
     pub pointer: PointerHandle<State>,
@@ -90,6 +92,8 @@ impl Common {
         let clock = Clock::new();
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
+        let xdg_decoration_state = XdgDecorationState::new::<State>(&display_handle);
+        
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
 
         // init input
@@ -159,6 +163,7 @@ impl Common {
             is_next_vblank_scheduled: false,
             compositor_state,
             xdg_shell_state,
+            xdg_decoration_state,
             shm_state,
             flutter_engine,
             dmabuf_state,

@@ -1,3 +1,4 @@
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::utils::{Buffer as BufferCoords, Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::{RectangleKind, RegionAttributes};
@@ -9,32 +10,50 @@ use platform_channels::encodable_value::EncodableValue;
 pub struct SurfaceCommitMessage {
     pub view_id: u64,
     pub role: Option<&'static str>,
+    pub role_state: Option<WlSurfaceRoleState>,
     pub texture_id: i64,
     pub buffer_size: Option<Size<i32, BufferCoords>>,
     pub scale: i32,
     pub input_region: Option<RegionAttributes>,
-    pub xdg_surface: Option<XdgSurfaceCommitMessage>,
-    pub xdg_popup: Option<XdgPopupCommitMessage>,
-    pub subsurface: Option<SubsurfaceCommitMessage>,
     pub subsurfaces_below: Vec<u64>,
     pub subsurfaces_above: Vec<u64>,
 }
 
 #[derive(Debug)]
+pub enum WlSurfaceRoleState {
+    Subsurface(SubsurfaceCommitMessage),
+    XdgSurface(XdgSurfaceCommitMessage),
+}
+
+#[derive(Debug)]
+pub struct SubsurfaceCommitMessage {
+    pub location: Point<i32, Logical>,
+}
+
+#[derive(Debug)]
 pub struct XdgSurfaceCommitMessage {
     pub role: Option<&'static str>,
+    pub role_state: Option<XdgSurfaceRoleState>,
     pub geometry: Option<Rectangle<i32, Logical>>,
+}
+
+#[derive(Debug)]
+pub enum XdgSurfaceRoleState {
+    Toplevel(XdgToplevelCommitMessage),
+    Popup(XdgPopupCommitMessage),
+}
+
+#[derive(Debug)]
+pub struct XdgToplevelCommitMessage {
+    pub title: Option<String>,
+    pub app_id: Option<String>,
+    pub decoration: Option<zxdg_toplevel_decoration_v1::Mode>,
 }
 
 #[derive(Debug)]
 pub struct XdgPopupCommitMessage {
     pub parent_id: u64,
     pub geometry: Rectangle<i32, Logical>,
-}
-
-#[derive(Debug)]
-pub struct SubsurfaceCommitMessage {
-    pub location: Point<i32, Logical>,
 }
 
 impl SurfaceCommitMessage {
@@ -57,7 +76,7 @@ impl SurfaceCommitMessage {
             self.buffer_size.map(|size| Rectangle::from_loc_and_size((0, 0), (size.w, size.h))).unwrap_or_default()
         };
 
-        let mut vec = vec![
+        let vec = vec![
             (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(self.view_id as i64)),
             (EncodableValue::String("surface".to_string()), EncodableValue::Map(vec![
                 (EncodableValue::String("role".to_string()), EncodableValue::Int64(self.role.map(|role| {
@@ -67,6 +86,7 @@ impl SurfaceCommitMessage {
                         _ => 0,
                     }
                 }).unwrap_or(0))),
+                (EncodableValue::String("role_state".to_string()), self.role_state.map_or(EncodableValue::Null, |role_state| role_state.serialize())),
                 (EncodableValue::String("textureId".to_string()), EncodableValue::Int64(self.texture_id)),
                 (EncodableValue::String("x".to_string()), EncodableValue::Int32(0)),
                 (EncodableValue::String("y".to_string()), EncodableValue::Int32(0)),
@@ -84,43 +104,25 @@ impl SurfaceCommitMessage {
             ])),
         ];
 
-        if let Some(subsurface) = self.subsurface {
-            vec.extend([
-                (EncodableValue::String("has_subsurface".to_string()), EncodableValue::Bool(true)),
-                (EncodableValue::String("subsurface".to_string()), subsurface.serialize()),
-            ]);
-        } else {
-            vec.push(
-                (EncodableValue::String("has_subsurface".to_string()), EncodableValue::Bool(false)),
-            );
-        }
-
-        if let Some(xdg_surface) = self.xdg_surface {
-            vec.extend([
-                (EncodableValue::String("has_xdg_surface".to_string()), EncodableValue::Bool(true)),
-                (EncodableValue::String("xdg_surface".to_string()), xdg_surface.serialize()),
-                (EncodableValue::String("has_toplevel_decoration".to_string()), EncodableValue::Bool(false)),
-                (EncodableValue::String("has_toplevel_title".to_string()), EncodableValue::Bool(false)),
-                (EncodableValue::String("has_toplevel_app_id".to_string()), EncodableValue::Bool(false)),
-            ]);
-
-            if let Some(xdg_popup) = self.xdg_popup {
-                vec.extend([
-                    (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(true)),
-                    (EncodableValue::String("xdg_popup".to_string()), xdg_popup.serialize()),
-                ]);
-            } else {
-                vec.push(
-                    (EncodableValue::String("has_xdg_popup".to_string()), EncodableValue::Bool(false)),
-                );
-            }
-        } else {
-            vec.push(
-                (EncodableValue::String("has_xdg_surface".to_string()), EncodableValue::Bool(false)),
-            )
-        }
-
         EncodableValue::Map(vec)
+    }
+}
+
+impl WlSurfaceRoleState {
+    pub fn serialize(self) -> EncodableValue {
+        match self {
+            WlSurfaceRoleState::Subsurface(subsurface) => subsurface.serialize(),
+            WlSurfaceRoleState::XdgSurface(xdg_surface) => xdg_surface.serialize(),
+        }
+    }
+}
+
+impl SubsurfaceCommitMessage {
+    pub fn serialize(self) -> EncodableValue {
+        EncodableValue::Map(vec![
+            (EncodableValue::String("x".to_string()), EncodableValue::Int64(self.location.x as i64)),
+            (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.location.y as i64)),
+        ])
     }
 }
 
@@ -134,10 +136,30 @@ impl XdgSurfaceCommitMessage {
                     _ => 0,
                 }
             }).unwrap_or(0))),
+            (EncodableValue::String("role_state".to_string()), self.role_state.map_or(EncodableValue::Null, |role_state| role_state.serialize())),
             (EncodableValue::String("x".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.loc.x).unwrap_or(0) as i64)),
             (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.loc.y).unwrap_or(0) as i64)),
             (EncodableValue::String("width".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.size.w).unwrap_or(0) as i64)),
             (EncodableValue::String("height".to_string()), EncodableValue::Int64(self.geometry.map(|geometry| geometry.size.h).unwrap_or(0) as i64)),
+        ])
+    }
+}
+
+impl XdgSurfaceRoleState {
+    pub fn serialize(self) -> EncodableValue {
+        match self {
+            XdgSurfaceRoleState::Toplevel(toplevel) => toplevel.serialize(),
+            XdgSurfaceRoleState::Popup(popup) => popup.serialize(),
+        }
+    }
+}
+
+impl XdgToplevelCommitMessage {
+    pub fn serialize(self) -> EncodableValue {
+        EncodableValue::Map(vec![
+            (EncodableValue::String("title".to_string()), self.title.map_or(EncodableValue::Null, |v| EncodableValue::String(v))),
+            (EncodableValue::String("app_id".to_string()), self.app_id.map_or(EncodableValue::Null, |v| EncodableValue::String(v))),
+            (EncodableValue::String("decoration".to_string()), self.decoration.map_or(EncodableValue::Null, |v| EncodableValue::Int64(v as i64))),
         ])
     }
 }
@@ -150,15 +172,6 @@ impl XdgPopupCommitMessage {
             (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.geometry.loc.y as i64)),
             (EncodableValue::String("width".to_string()), EncodableValue::Int64(self.geometry.size.w as i64)),
             (EncodableValue::String("height".to_string()), EncodableValue::Int64(self.geometry.size.h as i64)),
-        ])
-    }
-}
-
-impl SubsurfaceCommitMessage {
-    pub fn serialize(self) -> EncodableValue {
-        EncodableValue::Map(vec![
-            (EncodableValue::String("x".to_string()), EncodableValue::Int64(self.location.x as i64)),
-            (EncodableValue::String("y".to_string()), EncodableValue::Int64(self.location.y as i64)),
         ])
     }
 }
