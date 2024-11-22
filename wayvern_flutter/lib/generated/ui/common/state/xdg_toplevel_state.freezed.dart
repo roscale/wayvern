@@ -23,8 +23,8 @@ mixin _$XdgToplevelState {
   ResizeEdgeObject get interactiveResizeRequested =>
       throw _privateConstructorUsedError;
   ToplevelDecoration? get decoration => throw _privateConstructorUsedError;
-  String get title => throw _privateConstructorUsedError;
-  String get appId => throw _privateConstructorUsedError;
+  String? get title => throw _privateConstructorUsedError;
+  String? get appId => throw _privateConstructorUsedError;
   Tiling? get tilingRequested => throw _privateConstructorUsedError;
 
   /// Create a copy of XdgToplevelState
@@ -47,8 +47,8 @@ abstract class $XdgToplevelStateCopyWith<$Res> {
       Object interactiveMoveRequested,
       ResizeEdgeObject interactiveResizeRequested,
       ToplevelDecoration? decoration,
-      String title,
-      String appId,
+      String? title,
+      String? appId,
       Tiling? tilingRequested});
 }
 
@@ -73,8 +73,8 @@ class _$XdgToplevelStateCopyWithImpl<$Res, $Val extends XdgToplevelState>
     Object? interactiveMoveRequested = null,
     Object? interactiveResizeRequested = null,
     Object? decoration = freezed,
-    Object? title = null,
-    Object? appId = null,
+    Object? title = freezed,
+    Object? appId = freezed,
     Object? tilingRequested = freezed,
   }) {
     return _then(_value.copyWith(
@@ -101,14 +101,14 @@ class _$XdgToplevelStateCopyWithImpl<$Res, $Val extends XdgToplevelState>
           ? _value.decoration
           : decoration // ignore: cast_nullable_to_non_nullable
               as ToplevelDecoration?,
-      title: null == title
+      title: freezed == title
           ? _value.title
           : title // ignore: cast_nullable_to_non_nullable
-              as String,
-      appId: null == appId
+              as String?,
+      appId: freezed == appId
           ? _value.appId
           : appId // ignore: cast_nullable_to_non_nullable
-              as String,
+              as String?,
       tilingRequested: freezed == tilingRequested
           ? _value.tilingRequested
           : tilingRequested // ignore: cast_nullable_to_non_nullable
@@ -132,8 +132,8 @@ abstract class _$$XdgToplevelStateImplCopyWith<$Res>
       Object interactiveMoveRequested,
       ResizeEdgeObject interactiveResizeRequested,
       ToplevelDecoration? decoration,
-      String title,
-      String appId,
+      String? title,
+      String? appId,
       Tiling? tilingRequested});
 }
 
@@ -156,8 +156,8 @@ class __$$XdgToplevelStateImplCopyWithImpl<$Res>
     Object? interactiveMoveRequested = null,
     Object? interactiveResizeRequested = null,
     Object? decoration = freezed,
-    Object? title = null,
-    Object? appId = null,
+    Object? title = freezed,
+    Object? appId = freezed,
     Object? tilingRequested = freezed,
   }) {
     return _then(_$XdgToplevelStateImpl(
@@ -184,14 +184,14 @@ class __$$XdgToplevelStateImplCopyWithImpl<$Res>
           ? _value.decoration
           : decoration // ignore: cast_nullable_to_non_nullable
               as ToplevelDecoration?,
-      title: null == title
+      title: freezed == title
           ? _value.title
           : title // ignore: cast_nullable_to_non_nullable
-              as String,
-      appId: null == appId
+              as String?,
+      appId: freezed == appId
           ? _value.appId
           : appId // ignore: cast_nullable_to_non_nullable
-              as String,
+              as String?,
       tilingRequested: freezed == tilingRequested
           ? _value.tilingRequested
           : tilingRequested // ignore: cast_nullable_to_non_nullable
@@ -227,9 +227,9 @@ class _$XdgToplevelStateImpl implements _XdgToplevelState {
   @override
   final ToplevelDecoration? decoration;
   @override
-  final String title;
+  final String? title;
   @override
-  final String appId;
+  final String? appId;
   @override
   final Tiling? tilingRequested;
 
@@ -293,8 +293,8 @@ abstract class _XdgToplevelState implements XdgToplevelState {
       required final Object interactiveMoveRequested,
       required final ResizeEdgeObject interactiveResizeRequested,
       required final ToplevelDecoration? decoration,
-      required final String title,
-      required final String appId,
+      required final String? title,
+      required final String? appId,
       required final Tiling? tilingRequested}) = _$XdgToplevelStateImpl;
 
   @override
@@ -310,9 +310,9 @@ abstract class _XdgToplevelState implements XdgToplevelState {
   @override
   ToplevelDecoration? get decoration;
   @override
-  String get title;
+  String? get title;
   @override
-  String get appId;
+  String? get appId;
   @override
   Tiling? get tilingRequested;
 

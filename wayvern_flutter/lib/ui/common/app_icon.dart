@@ -80,7 +80,7 @@ class AppIconByPath extends StatelessWidget {
 }
 
 class AppIconById extends ConsumerWidget {
-  final String id;
+  final String? id;
 
   const AppIconById({
     super.key,
@@ -89,6 +89,10 @@ class AppIconById extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (id == null) {
+      return const SizedBox();
+    }
+
     return ref.watch(localizedDesktopEntriesProvider).maybeWhen(
           data: (Map<String, LocalizedDesktopEntry> desktopEntries) {
             LocalizedDesktopEntry? entry = desktopEntries[id];
@@ -116,7 +120,7 @@ class AppIconByViewId extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String appId = ref.watch(
+    String? appId = ref.watch(
         waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.appId));
     return AppIconById(id: appId);
   }

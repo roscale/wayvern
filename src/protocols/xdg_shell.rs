@@ -8,7 +8,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::Res
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::utils::Serial;
 use smithay::wayland::compositor::with_states;
-use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState};
+use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgPopupSurfaceData, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData};
 
 delegate_xdg_shell!(State);
 
@@ -111,5 +111,61 @@ impl XdgShellHandler for State {
             surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
         });
         self.common.xdg_toplevels.remove(&view_id);
+    }
+
+    fn app_id_changed(&mut self, surface: ToplevelSurface) {
+        let app_id = with_states(surface.wl_surface(), |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            attributes.app_id.clone().unwrap()
+        });
+
+        let view_id = with_states(surface.wl_surface(), |surface_data| {
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
+        });
+
+        self.common.flutter_engine.invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "set_app_id",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+                (EncodableValue::String("app_id".to_string()), EncodableValue::String(app_id)),
+            ]))),
+            None,
+        );
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        let title = with_states(surface.wl_surface(), |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            attributes.title.clone().unwrap()
+        });
+
+        let view_id = with_states(surface.wl_surface(), |surface_data| {
+            surface_data.data_map.get::<MySurfaceState>().unwrap().borrow().view_id
+        });
+
+        self.common.flutter_engine.invoke_method(
+            StandardMethodCodec::new(),
+            "platform",
+            "set_title",
+            Some(Box::new(EncodableValue::Map(vec![
+                (EncodableValue::String("view_id".to_string()), EncodableValue::Int64(view_id as i64)),
+                (EncodableValue::String("title".to_string()), EncodableValue::String(title)),
+            ]))),
+            None,
+        );
     }
 }

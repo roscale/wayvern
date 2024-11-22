@@ -82,8 +82,12 @@ class _WindowTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String title = ref.watch(
+    String? title = ref.watch(
         waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.title));
+
+    if (title == null) {
+      return const SizedBox();
+    }
 
     return Positioned.fill(
       child: Align(
@@ -175,7 +179,7 @@ class _AppIcon extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String appId = ref.watch(
+    String? appId = ref.watch(
         waylandProviderProvider.select((v) => v.xdgToplevels[viewId]!.appId));
 
     return SizedBox(

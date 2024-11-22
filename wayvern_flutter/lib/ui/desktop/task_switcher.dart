@@ -102,9 +102,15 @@ class TaskSwitcherItem extends ConsumerWidget {
             ),
             child: Consumer(
               builder: (BuildContext context, WidgetRef ref, Widget? child) {
+                final title = ref.watch(waylandProviderProvider
+                    .select((p) => p.xdgToplevels[task]!.title));
+
+                if (title == null) {
+                  return const SizedBox();
+                }
+
                 return Text(
-                  ref.watch(waylandProviderProvider
-                      .select((p) => p.xdgToplevels[task]!.title)),
+                  title,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,

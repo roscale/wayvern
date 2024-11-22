@@ -45,8 +45,6 @@ pub enum XdgSurfaceRoleState {
 
 #[derive(Debug)]
 pub struct XdgToplevelCommitMessage {
-    pub title: Option<String>,
-    pub app_id: Option<String>,
     pub decoration: Option<zxdg_toplevel_decoration_v1::Mode>,
 }
 
@@ -157,8 +155,6 @@ impl XdgSurfaceRoleState {
 impl XdgToplevelCommitMessage {
     pub fn serialize(self) -> EncodableValue {
         EncodableValue::Map(vec![
-            (EncodableValue::String("title".to_string()), self.title.map_or(EncodableValue::Null, |v| EncodableValue::String(v))),
-            (EncodableValue::String("app_id".to_string()), self.app_id.map_or(EncodableValue::Null, |v| EncodableValue::String(v))),
             (EncodableValue::String("decoration".to_string()), self.decoration.map_or(EncodableValue::Null, |v| EncodableValue::Int64(v as i64))),
         ])
     }

@@ -159,8 +159,6 @@ impl CompositorHandler for State {
                                     let toplevel_data = surface_data.data_map.get::<XdgToplevelSurfaceData>().unwrap().lock().unwrap();
 
                                     Some(XdgSurfaceRoleState::Toplevel(XdgToplevelCommitMessage {
-                                        title: toplevel_data.title.clone(),
-                                        app_id: toplevel_data.app_id.clone(),
                                         decoration: toplevel_data.current.decoration_mode,
                                     }))
                                 }

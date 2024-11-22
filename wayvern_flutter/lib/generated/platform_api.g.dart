@@ -326,7 +326,7 @@ final windowUnmappedStreamProvider =
 );
 
 typedef _$WindowUnmappedStream = StreamNotifier<int>;
-String _$platformApiHash() => r'3afd4af1af917763250b7150f4130b2ca3ba512d';
+String _$platformApiHash() => r'df6f4ca40e03ab91490730e7f43cf66afe2a50f4';
 
 /// See also [PlatformApi].
 @ProviderFor(PlatformApi)

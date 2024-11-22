@@ -6,7 +6,7 @@ part of '../../../../ui/common/state/wayland_state.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$waylandProviderHash() => r'0a9875137be295ddbacc9a48c8dedb120d81d403';
+String _$waylandProviderHash() => r'bf469c24d3159f66e6507ced4284c0454087e9c6';
 
 /// See also [WaylandProvider].
 @ProviderFor(WaylandProvider)

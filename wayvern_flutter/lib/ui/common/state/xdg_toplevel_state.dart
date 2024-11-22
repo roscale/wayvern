@@ -21,8 +21,8 @@ class XdgToplevelState with _$XdgToplevelState {
     required Object interactiveMoveRequested,
     required ResizeEdgeObject interactiveResizeRequested,
     required ToplevelDecoration? decoration,
-    required String title,
-    required String appId,
+    required String? title,
+    required String? appId,
     required Tiling? tilingRequested,
   }) = _XdgToplevelState;
 }
