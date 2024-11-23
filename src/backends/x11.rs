@@ -43,7 +43,7 @@ pub fn run_x11_client(mut event_loop: EventLoop<'static, State>, display_handle:
 
     let window_size = window.size();
     let window_size = (window_size.w as i32, window_size.h as i32).into();
-    
+
     let mode = Mode {
         size: window_size,
         refresh: 144_000,
@@ -196,6 +196,7 @@ pub fn run_x11_client(mut event_loop: EventLoop<'static, State>, display_handle:
         }
         X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => data.common.vsync(),
         X11Event::Input { event, window_id: _ } => handle_input(&event, data),
+        X11Event::Focus { focused: false, .. } => data.release_all_keys(),
         X11Event::Focus { .. } => {}
     }).unwrap();
 

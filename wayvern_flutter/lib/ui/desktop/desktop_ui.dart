@@ -18,12 +18,6 @@ class DesktopUi extends ConsumerStatefulWidget {
   ConsumerState<DesktopUi> createState() => _DesktopUiState();
 }
 
-/// FIXME:
-/// This shouldn't be necessary but I have problems with keyboard input.
-/// When the super key is pressed, the state of the keyboard says that both meta left and meta right
-/// are pressed instead of super left or super right.
-/// It's even more confusing because the linux kernel itself only has a definition for the meta key,
-/// not the super key, and it's considered pressed when the super key is pressed.
 class SingleLogicalKeyReleaseActivator extends ShortcutActivator {
   LogicalKeyboardKey key;
 
@@ -70,28 +64,41 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
             ref.watch(taskSwitcherProvider.select((value) => value.shown));
         final taskSwitcherShortcuts = !taskSwitcherShown
             ? {
-                const SingleActivator(LogicalKeyboardKey.tab,
-                    alt: true,
-                    includeRepeats: false): const ShowTaskSwitcher(true),
-                const SingleActivator(LogicalKeyboardKey.tab,
-                    alt: true,
-                    shift: true,
-                    includeRepeats: false): const ShowTaskSwitcher(false),
+                const SingleActivator(
+                  LogicalKeyboardKey.tab,
+                  control: true,
+                  includeRepeats: false,
+                ): const ShowTaskSwitcher(true),
+                //
+                const SingleActivator(
+                  LogicalKeyboardKey.tab,
+                  control: true,
+                  shift: true,
+                  includeRepeats: false,
+                ): const ShowTaskSwitcher(false),
               }
             : {
-                SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.altLeft):
-                    HideTaskSwitcher(),
-                const SingleActivator(LogicalKeyboardKey.tab,
-                    alt: true, includeRepeats: false): TaskSwitcherGoToNext(),
-                const SingleActivator(LogicalKeyboardKey.tab,
-                    alt: true,
-                    shift: true,
-                    includeRepeats: false): TaskSwitcherGoToPrevious(),
+                SingleLogicalKeyReleaseActivator(
+                  LogicalKeyboardKey.controlLeft,
+                ): HideTaskSwitcher(),
+                //
+                const SingleActivator(
+                  LogicalKeyboardKey.tab,
+                  control: true,
+                  includeRepeats: false,
+                ): TaskSwitcherGoToNext(),
+                //
+                const SingleActivator(
+                  LogicalKeyboardKey.tab,
+                  control: true,
+                  shift: true,
+                  includeRepeats: false,
+                ): TaskSwitcherGoToPrevious(),
               };
 
         return Shortcuts(
           shortcuts: {
-            SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.superKey):
+            SingleLogicalKeyReleaseActivator(LogicalKeyboardKey.metaLeft):
                 ToggleAppDrawerIntent(),
             ...taskSwitcherShortcuts,
           },

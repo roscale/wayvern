@@ -58,6 +58,8 @@ use crate::flutter_engine::task_runner::TaskRunner;
 use crate::flutter_engine::text_input::TextInput;
 use crate::gles_framebuffer_importer::GlesFramebufferImporter;
 use crate::keyboard::glfw_key_codes::{get_glfw_keycode, get_glfw_modifiers};
+use crate::keyboard::glfw_to_logical::glfw_to_logical_map;
+use crate::keyboard::xkb_to_physical::xkb_to_physical_map;
 use crate::mouse_button_tracker::MouseButtonTracker;
 use crate::state::State;
 
@@ -151,7 +153,7 @@ impl FlutterEngine {
                 return Err(format!("Could not create AOT data, error {result}").into());
             }
         }
-        
+
         let mut this = Box::new(Self {
             handle: null_mut(),
             data: FlutterEngineData::new(root_egl_context, flutter_engine_channels)?,
@@ -333,8 +335,9 @@ impl FlutterEngine {
     pub fn send_key_event(&mut self, key_event: KeyEvent, handled_channel: channel::Sender<(KeyEvent, bool)>) -> Result<(), Box<dyn std::error::Error>> {
         let codec = JsonMessageCodec::new();
 
-        let physical = key_event.key_code.raw() + 8;
-        let logical = get_glfw_keycode(key_event.key_code.raw());
+        let xkb_key_code = key_event.key_code.raw();
+        let evdev_key_code = xkb_key_code - 8;
+        let glfw_key_code = get_glfw_keycode(evdev_key_code);
 
         let character = key_event.codepoint.map(|c| CString::new(c.to_string()).unwrap());
 
@@ -350,8 +353,8 @@ impl FlutterEngine {
                     } else {
                         FlutterKeyEventType_kFlutterKeyEventTypeUp
                     },
-                    physical: physical as u64,
-                    logical: logical as u64,
+                    physical: *xkb_to_physical_map.get(&xkb_key_code).unwrap_or(&(xkb_key_code as u64)),
+                    logical: *glfw_to_logical_map.get(&glfw_key_code).unwrap_or(&(glfw_key_code as u64)),
                     character: character.map(|c| c.as_ptr()).unwrap_or(null()),
                     synthesized: false,
                 } as *const _,
@@ -366,9 +369,9 @@ impl FlutterEngine {
             json!({
                 "keymap": "linux",
                 "toolkit": "glfw",
-                "keyCode": logical,
+                "keyCode": glfw_key_code,
                 "specifiedLogicalKey": key_event.specified_logical_key,
-                "scanCode": physical,
+                "scanCode": xkb_key_code,
                 "modifiers": get_glfw_modifiers(key_event.mods),
                 "unicodeScalarValues": key_event.codepoint.map(|c| c as u32),
                 "type": if key_event.state == KeyState::Pressed { "keydown" } else { "keyup" },

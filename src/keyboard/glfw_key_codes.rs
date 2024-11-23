@@ -7,11 +7,11 @@ use input_linux::sys::*;
 use lazy_static::lazy_static;
 use smithay::input::keyboard::ModifiersState;
 
-pub fn get_glfw_keycode(xkb_keycode: u32) -> u32 {
-    keycode_to_glfwkey_map
-        .get(&xkb_keycode)
+pub fn get_glfw_keycode(evdev_keycode: u32) -> u32 {
+    evdev_to_glfw_map
+        .get(&evdev_keycode)
         .copied()
-        .unwrap_or(xkb_keycode)
+        .unwrap_or(evdev_keycode)
 }
 
 pub fn get_glfw_modifiers(mods_state: ModifiersState) -> u32 {
@@ -170,7 +170,7 @@ const kGlfwKeyRightSuper: u32 = 347;
 const kGlfwKeyMenu: u32 = 348;
 
 lazy_static! {
-    static ref keycode_to_glfwkey_map: HashMap<u32, u32> = {
+    static ref evdev_to_glfw_map: HashMap<u32, u32> = {
         HashMap::from([
             (KEY_GRAVE as u32, kGlfwKeyGraveAccent),
             (KEY_1 as u32, kGlfwKey1),

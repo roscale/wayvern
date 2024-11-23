@@ -205,6 +205,14 @@ impl State {
             self.common.tx_flutter_handled_key_event.clone(),
         ).unwrap();
     }
+
+    pub fn release_all_keys(&mut self) {
+        let keyboard = self.common.keyboard.clone();
+        
+        for key_code in keyboard.pressed_keys() {
+            self.handle_key_event(key_code, KeyState::Released);
+        }
+    }
 }
 
 pub fn register_flutter_handled_key_event_handler(
