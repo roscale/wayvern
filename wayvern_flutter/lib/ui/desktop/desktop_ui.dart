@@ -66,31 +66,31 @@ class _DesktopUiState extends ConsumerState<DesktopUi> {
             ? {
                 const SingleActivator(
                   LogicalKeyboardKey.tab,
-                  control: true,
+                  meta: true,
                   includeRepeats: false,
                 ): const ShowTaskSwitcher(true),
                 //
                 const SingleActivator(
                   LogicalKeyboardKey.tab,
-                  control: true,
+                  meta: true,
                   shift: true,
                   includeRepeats: false,
                 ): const ShowTaskSwitcher(false),
               }
             : {
                 SingleLogicalKeyReleaseActivator(
-                  LogicalKeyboardKey.controlLeft,
+                  LogicalKeyboardKey.metaLeft,
                 ): HideTaskSwitcher(),
                 //
                 const SingleActivator(
                   LogicalKeyboardKey.tab,
-                  control: true,
+                  meta: true,
                   includeRepeats: false,
                 ): TaskSwitcherGoToNext(),
                 //
                 const SingleActivator(
                   LogicalKeyboardKey.tab,
-                  control: true,
+                  meta: true,
                   shift: true,
                   includeRepeats: false,
                 ): TaskSwitcherGoToPrevious(),

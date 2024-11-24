@@ -16,6 +16,7 @@ import 'package:zenith/ui/desktop/state/window_position_provider.dart';
 import 'package:zenith/ui/desktop/state/window_resize_provider.dart';
 import 'package:zenith/ui/desktop/state/window_stack_provider.dart';
 import 'package:zenith/ui/desktop/state/window_state_provider.dart';
+import 'package:zenith/ui/desktop/window_dragger.dart';
 
 const duration = Duration(milliseconds: 300);
 
@@ -126,12 +127,15 @@ class _WindowState extends ConsumerState<Window>
         child: RepaintBoundary(
           key: ref.watch(windowStateProvider(widget.viewId)
               .select((value) => value.repaintBoundaryKey)),
-          child: WithDecorations(
+          child: WindowDragger(
             viewId: widget.viewId,
-            child: InteractiveMoveAndResizeListener(
+            child: WithDecorations(
               viewId: widget.viewId,
-              child: XdgToplevelSurface(
+              child: InteractiveMoveAndResizeListener(
                 viewId: widget.viewId,
+                child: XdgToplevelSurface(
+                  viewId: widget.viewId,
+                ),
               ),
             ),
           ),

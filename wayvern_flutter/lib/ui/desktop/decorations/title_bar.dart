@@ -5,9 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zenith/platform_api.dart';
 import 'package:zenith/ui/common/app_icon.dart';
 import 'package:zenith/ui/common/state/wayland_state.dart';
-import 'package:zenith/ui/common/state/xdg_toplevel_state.dart';
-import 'package:zenith/ui/desktop/state/window_move_provider.dart';
-import 'package:zenith/ui/desktop/state/window_position_provider.dart';
+import 'package:zenith/ui/desktop/move_window_on_pan_gesture_detector.dart';
 
 class TitleBar extends ConsumerStatefulWidget {
   final int viewId;
@@ -26,24 +24,8 @@ class _TitleBarState extends ConsumerState<TitleBar> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanDown: (DragDownDetails details) {
-        Offset startPosition = ref.read(windowPositionProvider(widget.viewId));
-        ref
-            .read(windowMoveProvider(widget.viewId).notifier)
-            .startMove(startPosition);
-      },
-      onPanUpdate: (DragUpdateDetails details) {
-        ref
-            .read(windowMoveProvider(widget.viewId).notifier)
-            .move(details.delta);
-      },
-      onPanEnd: (_) {
-        ref.read(windowMoveProvider(widget.viewId).notifier).endMove();
-      },
-      onPanCancel: () {
-        ref.read(windowMoveProvider(widget.viewId).notifier).cancelMove();
-      },
+    return MoveWindowOnPanGestureDetector(
+      viewId: widget.viewId,
       child: SizedBox(
         height: 30,
         child: BackdropFilter(
