@@ -1,0 +1,8 @@
+[package]
+name = "wayvern"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wayvern_rs = { path = "../wayvern_rs" }
+
