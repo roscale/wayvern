@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 wayvern_rs = { path = "../wayvern_rs" }
+anyhow = "1.0.98"
 

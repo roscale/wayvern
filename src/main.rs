@@ -1,5 +1,7 @@
-use std::path::Path;
+use anyhow::Result;
 
-fn main() {
-    wayvern_rs::run("flutter_bin");
+fn main() -> Result<()> {
+    wayvern_rs::run(
+        "/home/roscale/NeovimProjects/wv/wayvern/flutter_bin/build/linux/x64/debug/bundle".into(),
+    )
 }

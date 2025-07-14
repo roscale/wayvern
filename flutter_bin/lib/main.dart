@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runWidget(ViewCollection(views: [
+    View(view: RendererBinding.instance.platformDispatcher.view(id: 0)!, child: MyApp(title: "View 0")),
+    View(view: RendererBinding.instance.platformDispatcher.view(id: 1)!, child: MyApp(title: "View 1")),
+  ]));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final String title;
+
+  MyApp({super.key, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +21,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MyHomePage(title: title),
     );
   }
 }
