@@ -1,0 +1,155 @@
+use std::collections::BinaryHeap;
+use std::ops::Deref;
+use std::time::Duration;
+use std::{cmp::Ordering, sync::mpsc};
+
+use crate::flutter_engine_rs::engine_handle::EngineHandle;
+use crate::flutter_engine_rs::flutter_engine_sys::{
+    FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask, FlutterTaskRunner,
+};
+use crate::flutter_engine_rs::user_data::TaskRunnerUserData;
+
+#[derive(Debug, Copy, Clone)]
+pub struct TaskRunnerHandle(pub FlutterTaskRunner);
+
+unsafe impl Send for TaskRunnerHandle {}
+
+impl Deref for TaskRunnerHandle {
+    type Target = FlutterTaskRunner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Task {
+    pub runner: TaskRunnerHandle,
+    pub task: u64,
+    pub target_time: u64,
+}
+
+impl PartialEq<Self> for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.task == other.task
+    }
+}
+
+impl Eq for Task {}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Flip the ordering so that the BinaryHeap becomes a min-heap.
+        // Smaller target times have higher priority.
+        // In case of a tie, we compare the task ID.
+        // This step is necessary to make implementations of `PartialEq` and `Ord` consistent.
+        other
+            .target_time
+            .cmp(&self.target_time)
+            .then_with(|| self.task.cmp(&other.task))
+    }
+}
+
+impl PartialOrd<Self> for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn get_next_task_due_time(tasks: &mut BinaryHeap<Task>) -> Duration {
+    match tasks.peek() {
+        None => Duration::MAX,
+        Some(Task { target_time, .. }) => {
+            let now = unsafe { FlutterEngineGetCurrentTime() };
+            let duration_ns = target_time.checked_sub(now).unwrap_or(0);
+            Duration::from_nanos(duration_ns)
+        }
+    }
+}
+
+fn drain_channel(rx: &mut mpsc::Receiver<Task>, tasks: &mut BinaryHeap<Task>) -> Result<(), ()> {
+    loop {
+        match rx.try_recv() {
+            Ok(task) => {
+                tasks.push(task);
+            }
+            Err(mpsc::TryRecvError::Empty) => return Ok(()),
+            Err(mpsc::TryRecvError::Disconnected) => return Err(()),
+        }
+    }
+}
+
+pub struct TaskRunner {
+    // tasks_tx must be declared before join_handle to prevent a deadlock.
+    // Fields are dropped first to last.
+    // If the sender is dropped, the thread will detect it and end on its own.
+    // Then the join_handle can be dropped without deadlocking because the thread is already in the process of exiting.
+    pub user_data: Box<TaskRunnerUserData>,
+    _join_handle: jod_thread::JoinHandle,
+    pub engine_handle_tx: mpsc::Sender<EngineHandle>,
+}
+
+pub fn spawn_task_runner() -> TaskRunner {
+    let (tasks_tx, mut tasks_rx) = mpsc::channel();
+    let (thread_id_tx, thread_id_rx) = mpsc::channel();
+    let (flutter_engine_handle_tx, flutter_engine_handle_rx) = mpsc::channel::<EngineHandle>();
+
+    let join_handle = jod_thread::spawn(move || {
+        let thread_id = std::thread::current().id();
+
+        thread_id_tx
+            .send(thread_id)
+            .expect("Failed to send thread ID");
+
+        let Ok(flutter_engine_handle) = flutter_engine_handle_rx.recv() else {
+            return;
+        };
+        let flutter_engine_handle = *flutter_engine_handle;
+
+        let mut tasks = BinaryHeap::new();
+
+        loop {
+            let due_time = get_next_task_due_time(&mut tasks);
+
+            if let Ok(task) = tasks_rx.recv_timeout(due_time) {
+                tasks.push(task);
+            }
+
+            // Drain the channel if multiple tasks were enqueued.
+            if drain_channel(&mut tasks_rx, &mut tasks).is_err() {
+                return;
+            }
+
+            while let Some(task) = tasks.peek() {
+                if task.target_time > unsafe { FlutterEngineGetCurrentTime() } {
+                    break;
+                }
+
+                let flutter_task = FlutterTask {
+                    runner: *task.runner,
+                    task: task.task,
+                };
+
+                unsafe {
+                    FlutterEngineRunTask(flutter_engine_handle, &flutter_task as *const FlutterTask)
+                };
+                tasks.pop();
+
+                if drain_channel(&mut tasks_rx, &mut tasks).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+
+    let thread_id = thread_id_rx.recv().expect("Failed to receive thread ID");
+
+    TaskRunner {
+        user_data: Box::new(TaskRunnerUserData {
+            tasks_tx,
+            thread_id,
+        }),
+        _join_handle: join_handle,
+        engine_handle_tx: flutter_engine_handle_tx,
+    }
+}
