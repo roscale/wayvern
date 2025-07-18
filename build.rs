@@ -11,19 +11,33 @@ use flate2::bufread::GzDecoder;
 use sha2::{Digest, Sha256};
 use tar::Archive;
 
-const REPO: &str = "https://github.com/meta-flutter/flutter-engine/releases/download";
-const LIB_DIR: &str = "target/wayvern/lib";
+const FLUTTER_REPO: &str = "https://github.com/flutter/flutter";
+const ENGINE_REPO: &str = "https://github.com/meta-flutter/flutter-engine/releases/download";
+
 const FLUTTER_SDK_DIR: &str = "target/wayvern/flutter";
+const LIB_DIR: &str = "target/wayvern/lib";
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let profile = std::env::var("PROFILE").unwrap();
+    let flutter_version = env!("FLUTTER_VERSION");
+
+    println!("cargo::rerun-if-changed=target/wayvern/flutter/version");
+    println!("cargo::rerun-if-changed=target/wayvern/lib");
+    println!("cargo::rerun-if-changed=flutter/lib");
+
+    if Path::new(FLUTTER_SDK_DIR).exists() {
+        if should_update_flutter_sdk(flutter_version) {
+            update_flutter_sdk(flutter_version);
+        }
+    } else {
+        clone_flutter_sdk(flutter_version)
+    }
+
     let arch = get_arch();
     let engine_hash = get_engine_hash();
 
-    println!("cargo::rerun-if-changed={LIB_DIR}");
-
-    if should_download_library(&profile, &engine_hash) {
+    if should_download_engine(&profile, &engine_hash) {
         let archive = download_archive(&profile, arch, &engine_hash);
         let files =
             extract_files_from_tar(&archive, &["libflutter_engine.so", "flutter_embedder.h"]);
@@ -33,6 +47,62 @@ fn main() {
 
     generate_bindings(&profile, &out_dir);
     link_library(&profile);
+
+    flutter_build(&profile);
+}
+
+fn should_update_flutter_sdk(version: &str) -> bool {
+    let version_on_disk = run_command_get_stdout(
+        Command::new("git")
+            .current_dir(FLUTTER_SDK_DIR)
+            .arg("describe")
+            .arg("--exact-match")
+            .arg("--tags"),
+    );
+    let version_on_disk = version_on_disk.trim();
+
+    version_on_disk != version
+}
+
+fn update_flutter_sdk(version: &str) {
+    run_command(
+        Command::new("git")
+            .current_dir(FLUTTER_SDK_DIR)
+            .arg("checkout")
+            .arg(version),
+    );
+}
+
+fn clone_flutter_sdk(version: &str) {
+    run_command(
+        Command::new("git")
+            .arg("clone")
+            .arg("--single-branch")
+            .arg("--branch")
+            .arg(version)
+            .arg(FLUTTER_REPO)
+            .arg(FLUTTER_SDK_DIR),
+    );
+}
+
+fn run_command(command: &mut Command) {
+    command
+        .spawn()
+        .unwrap_or_else(|err| panic!("Failed to spawn command: {err}"))
+        .wait()
+        .unwrap_or_else(|err| panic!("Failed to wait command: {err}"));
+}
+
+fn run_command_get_stdout(command: &mut Command) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|err| panic!("Failed to spawn command: {err}"));
+
+    if !output.status.success() {
+        panic!("Command failed, {:?}", output.status);
+    }
+
+    String::from_utf8(output.stdout).expect("Command output is not UTF-8")
 }
 
 fn get_arch() -> &'static str {
@@ -44,32 +114,14 @@ fn get_arch() -> &'static str {
 }
 
 fn get_engine_hash() -> String {
-    let flutter_exe = which_flutter();
-    let bin = flutter_exe.parent().unwrap();
-    let engine_version_path = bin.join("internal").join("engine.version");
-    let engine_version_path_str = engine_version_path.to_string_lossy();
+    let path = format!("{FLUTTER_SDK_DIR}/bin/internal/engine.version");
 
-    println!("cargo::rerun-if-changed={}", &engine_version_path_str);
+    println!("cargo::rerun-if-changed={}", &path);
 
-    read_to_string(&engine_version_path)
-        .unwrap_or_else(|_| panic!("Can't read {engine_version_path_str}"))
+    read_to_string(&path).unwrap_or_else(|err| panic!("Failed to read {path}, {err}"))
 }
 
-fn which_flutter() -> PathBuf {
-    println!("cargo::rerun-if-env-changed=PATH");
-
-    match Command::new("which").arg("flutter").output() {
-        Ok(output) if output.status.success() => {
-            let path = String::from_utf8_lossy(&output.stdout);
-            PathBuf::from(&*path)
-        }
-        _ => {
-            panic!("Flutter is required but not found in PATH");
-        }
-    }
-}
-
-fn should_download_library(profile: &str, engine_hash: &str) -> bool {
+fn should_download_engine(profile: &str, engine_hash: &str) -> bool {
     let engine_hash_file = format!("{LIB_DIR}/{profile}/engine_hash");
 
     let hash_on_disk = read_to_string(engine_hash_file);
@@ -83,8 +135,8 @@ fn download_archive(profile: &str, arch: &str, engine_hash: &str) -> Vec<u8> {
     let archive_filename = format!("{filename}.tar.gz");
     let checksum_filename = format!("{archive_filename}.sha256");
 
-    let archive_url = format!("{REPO}/{filename}/{archive_filename}");
-    let checksum_url = format!("{REPO}/{filename}/{checksum_filename}");
+    let archive_url = format!("{ENGINE_REPO}/{filename}/{archive_filename}");
+    let checksum_url = format!("{ENGINE_REPO}/{filename}/{checksum_filename}");
 
     let archive = download_binary(&archive_url);
 
@@ -181,18 +233,8 @@ fn write_files_to_disk(files: &HashMap<String, Vec<u8>>, profile: &str, engine_h
         .expect("Failed to write engine_hash");
 }
 
-fn link_library(profile: &str) {
-    let dir = std::path::absolute(format!("{LIB_DIR}/{profile}")).unwrap();
-    let dir = dir.to_str().unwrap();
-
-    println!("cargo:rustc-link-search={dir}");
-    println!("cargo:rustc-link-lib=flutter_engine");
-
-    println!("cargo:rustc-link-arg=-Wl,-rpath=$ORIGIN,-rpath={dir}");
-}
-
 fn generate_bindings(profile: &str, out_dir: &str) {
-    let header = format!("lib/{profile}/flutter_embedder.h");
+    let header = format!("{LIB_DIR}/{profile}/flutter_embedder.h");
 
     let bindings = bindgen::Builder::default()
         .header(header)
@@ -205,4 +247,26 @@ fn generate_bindings(profile: &str, out_dir: &str) {
     bindings
         .write_to_file(out_dir.join("flutter_engine_sys.rs"))
         .expect("Couldn't write bindings");
+}
+
+fn link_library(profile: &str) {
+    let dir = std::path::absolute(format!("{LIB_DIR}/{profile}")).unwrap();
+    let dir = dir.to_str().unwrap();
+
+    println!("cargo:rustc-link-search={dir}");
+    println!("cargo:rustc-link-lib=flutter_engine");
+
+    println!("cargo:rustc-link-arg=-Wl,-rpath=$ORIGIN,-rpath={dir}");
+}
+
+fn flutter_build(profile: &str) {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    run_command(
+        Command::new(format!("{manifest_dir}/target/wayvern/flutter/bin/flutter"))
+            .current_dir("flutter")
+            .arg("build")
+            .arg("linux")
+            .arg(format!("--{profile}")),
+    );
 }
