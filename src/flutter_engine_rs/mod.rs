@@ -6,7 +6,6 @@ mod task_runner;
 mod user_data;
 
 use anyhow::{Result, ensure};
-use core::fmt;
 pub use engine_callbacks::EngineCallbacks;
 use engine_handle::EngineHandle;
 use flutter_engine_sys::*;
@@ -335,7 +334,7 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn register_external_texture(&self, texture_id: i64) -> Result<()> {
+    pub fn _register_external_texture(&self, texture_id: i64) -> Result<()> {
         let result = unsafe { FlutterEngineRegisterExternalTexture(*self.handle, texture_id) };
 
         ensure!(
@@ -346,7 +345,7 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn unregister_external_texture(&self, texture_id: i64) -> Result<()> {
+    pub fn _unregister_external_texture(&self, texture_id: i64) -> Result<()> {
         let result = unsafe { FlutterEngineUnregisterExternalTexture(*self.handle, texture_id) };
 
         ensure!(
@@ -357,7 +356,7 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn mark_external_texture_frame_available(&self, texture_id: i64) -> Result<()> {
+    pub fn _mark_external_texture_frame_available(&self, texture_id: i64) -> Result<()> {
         let result =
             unsafe { FlutterEngineMarkExternalTextureFrameAvailable(*self.handle, texture_id) };
 
