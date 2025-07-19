@@ -1,14 +1,16 @@
 use std::collections::HashMap;
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 
-use crate::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
-use embedder_sys::{
+use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterDataCallback, FlutterEngine, FlutterEngineResult_kSuccess,
     FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse,
     FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle,
     FlutterPlatformMessageReleaseResponseHandle,
+};
+use crate::flutter_engine_rs::platform_channels::binary_messenger::{
+    BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
 
 pub struct BinaryMessengerImpl {

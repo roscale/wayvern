@@ -1,9 +1,9 @@
 use serde_json::Value;
-use crate::json_message_codec::JsonMessageCodec;
-use crate::message_codec::MessageCodec;
-use crate::method_call::MethodCall;
-use crate::method_codec::MethodCodec;
-use crate::method_result::MethodResult;
+use crate::flutter_engine_rs::platform_channels::json_message_codec::JsonMessageCodec;
+use crate::flutter_engine_rs::platform_channels::message_codec::MessageCodec;
+use crate::flutter_engine_rs::platform_channels::method_call::MethodCall;
+use crate::flutter_engine_rs::platform_channels::method_codec::MethodCodec;
+use crate::flutter_engine_rs::platform_channels::method_result::MethodResult;
 
 const K_MESSAGE_METHOD_KEY: &str = "method";
 const K_MESSAGE_ARGUMENTS_KEY: &str = "args";

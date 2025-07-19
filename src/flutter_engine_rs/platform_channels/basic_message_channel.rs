@@ -1,16 +1,19 @@
 use std::rc::Rc;
 
-use crate::binary_messenger::{
+use crate::flutter_engine_rs::platform_channels::binary_messenger::{
     BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
-use crate::encodable_value::EncodableValue;
-use crate::message_codec::MessageCodec;
+use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine_rs::platform_channels::message_codec::MessageCodec;
 
 pub type MessageReply<T> = Option<Box<dyn FnMut(Option<T>)>>;
 
 type MessageHandler<T> = Option<Box<dyn FnMut(Option<T>, MessageReply<T>)>>;
 
-pub struct BasicMessageChannel<'m, T = EncodableValue> where T: 'static {
+pub struct BasicMessageChannel<'m, T = EncodableValue>
+where
+    T: 'static,
+{
     messenger: &'m mut dyn BinaryMessenger,
     name: String,
     codec: Rc<dyn MessageCodec<T>>,
@@ -51,7 +54,7 @@ impl<'m, T> BasicMessageChannel<'m, T> {
                 let message = if let Some(message) = message {
                     message
                 } else {
-                    eprintln!("Unable to decode message on channel {}", channel_name);
+                    eprintln!("Unable to decode message on channel {channel_name}");
                     reply.unwrap()(None);
                     return;
                 };
@@ -67,6 +70,7 @@ impl<'m, T> BasicMessageChannel<'m, T> {
                 handler(Some(message), unencoded_reply);
             }));
 
-        self.messenger.set_message_handler(&self.name, binary_handler);
+        self.messenger
+            .set_message_handler(&self.name, binary_handler);
     }
 }

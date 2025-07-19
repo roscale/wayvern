@@ -1,4 +1,4 @@
-use crate::encodable_value::EncodableValue;
+use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
 
 pub trait MethodResult<T = EncodableValue> {
     fn success(&mut self, result: Option<T>) {

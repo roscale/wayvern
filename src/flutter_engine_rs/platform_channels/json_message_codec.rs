@@ -1,4 +1,4 @@
-use crate::message_codec::MessageCodec;
+use crate::flutter_engine_rs::platform_channels::message_codec::MessageCodec;
 
 #[derive(Default, Copy, Clone)]
 pub struct JsonMessageCodec {}

@@ -1,8 +1,11 @@
 use std::rc::Rc;
 
-use embedder_sys::FlutterPlatformMessage;
+use crate::flutter_engine_rs::flutter_engine_sys::FlutterPlatformMessage;
 
-use crate::{basic_message_channel::BasicMessageChannel, message_codec::MessageCodec, method_channel::MethodChannel, method_codec::MethodCodec, method_result::MethodResult};
+use crate::flutter_engine_rs::platform_channels::{
+    basic_message_channel::BasicMessageChannel, message_codec::MessageCodec,
+    method_channel::MethodChannel, method_codec::MethodCodec, method_result::MethodResult,
+};
 
 pub type BinaryReply = Option<Box<dyn FnMut(Option<&[u8]>)>>;
 

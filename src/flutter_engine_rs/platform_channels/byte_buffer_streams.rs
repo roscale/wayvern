@@ -1,4 +1,4 @@
-use crate::byte_streams::{ByteStreamReader, ByteStreamWriter};
+use crate::flutter_engine_rs::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
 
 pub struct ByteBufferStreamReader<'b> {
     buffer: &'b [u8],

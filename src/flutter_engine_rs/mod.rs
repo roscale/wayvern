@@ -4,6 +4,7 @@ mod ffi;
 mod flutter_engine_sys;
 mod task_runner;
 mod user_data;
+mod platform_channels;
 
 use anyhow::{Result, ensure};
 pub use engine_callbacks::EngineCallbacks;

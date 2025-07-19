@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
-use crate::byte_streams::{ByteStreamReader, ByteStreamWriter};
-use crate::encodable_value::EncodableValue;
+use crate::flutter_engine_rs::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
+use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]

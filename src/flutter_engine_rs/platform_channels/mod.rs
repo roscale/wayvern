@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod binary_messenger;
 pub mod binary_messenger_impl;
 pub mod method_call;

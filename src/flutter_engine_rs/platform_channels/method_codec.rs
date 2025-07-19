@@ -1,5 +1,5 @@
-use crate::method_call::MethodCall;
-use crate::method_result::MethodResult;
+use crate::flutter_engine_rs::platform_channels::method_call::MethodCall;
+use crate::flutter_engine_rs::platform_channels::method_result::MethodResult;
 
 pub trait MethodCodec<T> {
     fn decode_method_call(&self, message: &[u8]) -> Option<MethodCall<T>> {

@@ -1,5 +1,5 @@
-use crate::encodable_value::EncodableValue;
-use crate::method_result::MethodResult;
+use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine_rs::platform_channels::method_result::MethodResult;
 
 type ResultHandlerSuccess<T> = Option<Box<dyn FnMut(Option<&T>)>>;
 
