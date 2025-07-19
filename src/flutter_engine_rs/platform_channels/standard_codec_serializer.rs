@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::flutter_engine_rs::platform_channels::byte_streams::{ByteStreamReader, ByteStreamWriter};
+use crate::flutter_engine_rs::platform_channels::byte_streams::{
+    ByteStreamReader, ByteStreamWriter,
+};
 use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
 
 #[allow(non_camel_case_types)]
@@ -66,10 +68,6 @@ impl EncodableValue {
             EncodableValue::List(_) => EncodedType::kList,
             EncodableValue::Map(_) => EncodedType::kMap,
             EncodableValue::FloatList(_) => EncodedType::kFloat32List,
-            EncodableValue::Custom(_) => {
-                eprintln!("Custom types are not supported in StandardCodecSerializer");
-                EncodedType::kNull
-            }
         }
     }
 }
@@ -106,11 +104,10 @@ impl StandardCodecSerializer {
                     stream.write_bytes(value.as_bytes(), size);
                 }
             }
-            // TODO: Move, don't clone.
-            EncodableValue::ByteList(value) => self.write_vector(value.clone(), stream),
-            EncodableValue::Int32List(value) => self.write_vector(value.clone(), stream),
-            EncodableValue::Int64List(value) => self.write_vector(value.clone(), stream),
-            EncodableValue::DoubleList(value) => self.write_vector(value.clone(), stream),
+            EncodableValue::ByteList(value) => self.write_vector(value, stream),
+            EncodableValue::Int32List(value) => self.write_vector(value, stream),
+            EncodableValue::Int64List(value) => self.write_vector(value, stream),
+            EncodableValue::DoubleList(value) => self.write_vector(value, stream),
             EncodableValue::List(list) => {
                 self.write_size(list.len(), stream);
                 for value in list {
@@ -124,11 +121,7 @@ impl StandardCodecSerializer {
                     self.write_value(value, stream);
                 }
             }
-            EncodableValue::Custom(_) => {
-                eprintln!("Unhandled custom type in StandardCodecSerializer::WriteValue.\
-                Custom types require codec extensions.");
-            }
-            EncodableValue::FloatList(value) => self.write_vector(value.clone(), stream),
+            EncodableValue::FloatList(value) => self.write_vector(value, stream),
         }
     }
 
@@ -221,7 +214,7 @@ impl StandardCodecSerializer {
         EncodableValue::ByteList(vector)
     }
 
-    fn write_vector<T>(&self, vector: Vec<T>, stream: &mut dyn ByteStreamWriter) {
+    fn write_vector<T>(&self, vector: &[T], stream: &mut dyn ByteStreamWriter) {
         let count = vector.len();
         self.write_size(count, stream);
         if count == 0 {
@@ -232,8 +225,8 @@ impl StandardCodecSerializer {
             stream.write_alignment(type_size as u8);
         }
         let vector_ptr = vector.as_ptr() as *const u8;
-        unsafe {
-            stream.write_bytes(std::slice::from_raw_parts(vector_ptr, count * type_size), count * type_size);
-        }
+        let bytes =
+            unsafe { std::slice::from_raw_parts(vector_ptr, std::mem::size_of_val(vector)) };
+        stream.write_bytes(bytes, bytes.len());
     }
 }

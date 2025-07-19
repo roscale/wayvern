@@ -13,7 +13,6 @@ pub enum EncodableValue {
     DoubleList(Vec<f64>),
     List(Vec<EncodableValue>),
     Map(Vec<(EncodableValue, EncodableValue)>),
-    Custom(CustomEncodableValue),
     FloatList(Vec<f32>),
 }
 
@@ -31,23 +30,3 @@ impl EncodableValue {
     }
 }
 
-// TODO: It should be generic over T, but the codec doesn't support custom encodable values,
-// so I don't think it's worth implementing this because it's more work than it's worth.
-#[derive(Eq, PartialEq, Debug)]
-pub struct CustomEncodableValue {}
-
-// impl<T: Any + Copy> CustomEncodableValue<T> {
-//     pub fn new(value: &T) -> Self {
-//         Self {
-//             value: *value,
-//         }
-//     }
-//
-//     pub fn call(&self) -> &T {
-//         &self.value
-//     }
-//
-//     pub fn type_id(&self) -> TypeId {
-//         self.value.type_id()
-//     }
-// }
