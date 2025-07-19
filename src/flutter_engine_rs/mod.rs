@@ -2,9 +2,9 @@ mod engine_callbacks;
 mod engine_handle;
 mod ffi;
 mod flutter_engine_sys;
+mod platform_channels;
 mod task_runner;
 mod user_data;
-mod platform_channels;
 
 use anyhow::{Result, ensure};
 pub use engine_callbacks::EngineCallbacks;
@@ -23,8 +23,6 @@ pub struct Engine<UserData> {
     handle: EngineHandle,
     _engine_user_data: Box<EngineUserData<UserData>>,
     _platform_task_runner: task_runner::TaskRunner,
-    _render_task_runner: task_runner::TaskRunner,
-    _ui_task_runner: task_runner::TaskRunner,
 }
 
 impl<UserData> Engine<UserData> {
@@ -87,8 +85,6 @@ impl<UserData> Engine<UserData> {
         });
 
         let platform_task_runner = task_runner::spawn_task_runner();
-        let render_task_runner = task_runner::spawn_task_runner();
-        let ui_task_runner = task_runner::spawn_task_runner();
 
         let mut handle: FlutterEngine = null_mut();
 
@@ -153,27 +149,9 @@ impl<UserData> Engine<UserData> {
                             identifier: 0,
                             destruction_callback: None,
                         },
-                        render_task_runner: &FlutterTaskRunnerDescription {
-                            struct_size: size_of::<FlutterTaskRunnerDescription>(),
-                            user_data: &*render_task_runner.user_data as *const _ as *mut _,
-                            runs_task_on_current_thread_callback: Some(
-                                ffi::runs_task_on_current_thread_callback,
-                            ),
-                            post_task_callback: Some(ffi::post_task_callback),
-                            identifier: 1,
-                            destruction_callback: None,
-                        },
+                        render_task_runner: null_mut(),
                         thread_priority_setter: None,
-                        ui_task_runner: &FlutterTaskRunnerDescription {
-                            struct_size: size_of::<FlutterTaskRunnerDescription>(),
-                            user_data: &*render_task_runner.user_data as *const _ as *mut _,
-                            runs_task_on_current_thread_callback: Some(
-                                ffi::runs_task_on_current_thread_callback,
-                            ),
-                            post_task_callback: Some(ffi::post_task_callback),
-                            identifier: 2,
-                            destruction_callback: None,
-                        },
+                        ui_task_runner: null_mut(),
                     },
                     shutdown_dart_vm_when_done: true,
                     compositor: &FlutterCompositor {
@@ -235,16 +213,6 @@ impl<UserData> Engine<UserData> {
             .send(EngineHandle(handle))
             .expect("Failed to send Flutter engine handle to task runner");
 
-        render_task_runner
-            .engine_handle_tx
-            .send(EngineHandle(handle))
-            .expect("Failed to send Flutter engine handle to task runner");
-
-        ui_task_runner
-            .engine_handle_tx
-            .send(EngineHandle(handle))
-            .expect("Failed to send Flutter engine handle to task runner");
-
         let result = unsafe { FlutterEngineRunInitialized(handle) };
 
         ensure!(
@@ -256,8 +224,6 @@ impl<UserData> Engine<UserData> {
             handle: EngineHandle(handle),
             _engine_user_data: engine_user_data,
             _platform_task_runner: platform_task_runner,
-            _render_task_runner: render_task_runner,
-            _ui_task_runner: ui_task_runner,
         };
 
         Ok(flutter_engine)

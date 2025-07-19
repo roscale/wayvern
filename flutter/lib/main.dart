@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  runWidget(ViewCollection(views: [
-    View(view: RendererBinding.instance.platformDispatcher.view(id: 0)!, child: MyApp(title: "View 0")),
-  ]));
+
+  runWidget(
+    ViewCollection(
+      views: [
+        View(
+          view: RendererBinding.instance.platformDispatcher.view(id: 0)!,
+          child: MyApp(title: "View 0"),
+        ),
+      ],
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
