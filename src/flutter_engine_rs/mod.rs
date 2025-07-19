@@ -16,15 +16,42 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf, absolute},
     ptr::{null, null_mut},
+    sync::mpsc,
+    time::Instant,
 };
 use user_data::EngineUserData;
 
-use crate::flutter_engine_rs::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+use crate::flutter_engine_rs::{
+    platform_channels::{binary_messenger_impl::BinaryMessengerImpl, method_channel::MethodChannel},
+    task_runner::{ScheduledTask, Task},
+};
 
 pub struct Engine<UserData> {
     handle: EngineHandle,
     _engine_user_data: Box<EngineUserData<UserData>>,
     _platform_task_runner: task_runner::TaskRunner,
+}
+
+fn run_on_platform_thread<F, R>(tx_tasks: &mpsc::Sender<ScheduledTask>, f: F) -> R
+where
+    F: FnOnce() -> R + 'static,
+    R: 'static,
+{
+    let (tx_response, rx_response) = mpsc::channel();
+
+    tx_tasks
+        .send(ScheduledTask {
+            task: Task::Callback(Box::new(move || {
+                tx_response.send(f()).unwrap();
+            })),
+            target_time: unsafe { FlutterEngineGetCurrentTime() },
+            time_posted: Instant::now(),
+        })
+        .expect("Failed to send callback to platform thread");
+
+    rx_response
+        .recv()
+        .expect("Failed to get response from channel")
 }
 
 impl<UserData> Engine<UserData> {
@@ -42,7 +69,6 @@ impl<UserData> Engine<UserData> {
             request_texture: request_texture_callback,
             vsync: vsync_callback,
             present: present_callback,
-            platform_message_callback,
         } = callbacks;
 
         let bundle_path = get_bundle_path(flutter_project, aot_mode);
@@ -74,11 +100,12 @@ impl<UserData> Engine<UserData> {
 
         let elf_path = CString::new(bundle_path.join("lib/libapp.so").as_os_str().as_bytes())?;
 
-        let binary_messenger = BinaryMessengerImpl::new();
+        let platform_task_runner = task_runner::spawn_task_runner();
+        let binary_messenger =
+            BinaryMessengerImpl::new(platform_task_runner.user_data.tasks_tx.clone());
 
         let mut engine_user_data = Box::new(user_data::EngineUserData {
             proc_resolver_callback,
-            platform_message_callback,
             vsync_callback,
             make_current_callback,
             clear_current_callback,
@@ -88,8 +115,6 @@ impl<UserData> Engine<UserData> {
             binary_messenger,
             user_data,
         });
-
-        let platform_task_runner = task_runner::spawn_task_runner();
 
         let mut handle: FlutterEngine = null_mut();
 
@@ -220,7 +245,10 @@ impl<UserData> Engine<UserData> {
             .send(EngineHandle(handle))
             .expect("Failed to send Flutter engine handle to task runner");
 
-        let result = unsafe { FlutterEngineRunInitialized(handle) };
+        let result =
+            run_on_platform_thread(&platform_task_runner.user_data.tasks_tx, move || unsafe {
+                FlutterEngineRunInitialized(handle)
+            });
 
         ensure!(
             result == 0,
@@ -263,7 +291,12 @@ impl<UserData> Engine<UserData> {
             add_view_callback: Some(ffi::add_view_callback),
         };
 
-        let result = unsafe { FlutterEngineAddView(*self.handle, &info) };
+        let handle = self.handle;
+
+        let result = run_on_platform_thread(
+            &self._platform_task_runner.user_data.tasks_tx,
+            move || unsafe { FlutterEngineAddView(*handle, &info) },
+        );
 
         ensure!(result == 0, "Could add view {view_id}, error {result}");
 
@@ -273,8 +306,14 @@ impl<UserData> Engine<UserData> {
     pub fn send_view_metrics(&mut self, view_id: i64, width: usize, height: usize) -> Result<()> {
         let view_metrics = create_view_metrics(width, height, view_id);
 
-        let result =
-            unsafe { FlutterEngineSendWindowMetricsEvent(*self.handle, &view_metrics as *const _) };
+        let handle = self.handle;
+
+        let result = run_on_platform_thread(
+            &self._platform_task_runner.user_data.tasks_tx,
+            move || unsafe {
+                FlutterEngineSendWindowMetricsEvent(*handle, &view_metrics as *const _)
+            },
+        );
 
         ensure!(
             result == 0,
@@ -285,7 +324,10 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn get_current_time(&self) -> u64 {
-        unsafe { FlutterEngineGetCurrentTime() }
+        run_on_platform_thread(
+            &self._platform_task_runner.user_data.tasks_tx,
+            move || unsafe { FlutterEngineGetCurrentTime() },
+        )
     }
 
     pub fn on_vsync(
@@ -294,14 +336,19 @@ impl<UserData> Engine<UserData> {
         frame_start_time_nanos: u64,
         frame_target_time_nanos: u64,
     ) -> Result<()> {
-        let result = unsafe {
-            FlutterEngineOnVsync(
-                *self.handle,
-                baton,
-                frame_start_time_nanos,
-                frame_target_time_nanos,
-            )
-        };
+        let handle = self.handle;
+
+        let result = run_on_platform_thread(
+            &self._platform_task_runner.user_data.tasks_tx,
+            move || unsafe {
+                FlutterEngineOnVsync(
+                    *handle,
+                    baton,
+                    frame_start_time_nanos,
+                    frame_target_time_nanos,
+                )
+            },
+        );
 
         ensure!(result == 0, "Could not send vsync baton, error {result}");
 

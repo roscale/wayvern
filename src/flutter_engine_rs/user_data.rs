@@ -3,10 +3,11 @@ use std::thread::ThreadId;
 
 use crate::flutter_engine_rs::{
     engine_callbacks::{
-        ClearCurrentCallback, MakeCurrentCallback, MakeResourceCurrentCallback,
-        PlatformMessageCallback, PresentCallback, ProcResolverCallback, RequestTextureCallback,
-        VSyncCallback,
-    }, platform_channels::binary_messenger_impl::BinaryMessengerImpl, task_runner::ScheduledTask
+        ClearCurrentCallback, MakeCurrentCallback, MakeResourceCurrentCallback, PresentCallback,
+        ProcResolverCallback, RequestTextureCallback, VSyncCallback,
+    },
+    platform_channels::binary_messenger_impl::BinaryMessengerImpl,
+    task_runner::ScheduledTask,
 };
 
 pub struct TaskRunnerUserData {
@@ -16,7 +17,6 @@ pub struct TaskRunnerUserData {
 
 pub struct EngineUserData<UserData> {
     pub proc_resolver_callback: ProcResolverCallback<UserData>,
-    pub platform_message_callback: PlatformMessageCallback<UserData>,
     pub vsync_callback: VSyncCallback<UserData>,
     pub make_current_callback: MakeCurrentCallback<UserData>,
     pub clear_current_callback: ClearCurrentCallback<UserData>,

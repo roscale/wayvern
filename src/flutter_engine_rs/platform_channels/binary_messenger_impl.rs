@@ -3,9 +3,10 @@ use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use std::sync::mpsc;
+use std::time::Instant;
 
 use crate::flutter_engine_rs::flutter_engine_sys::{
-    FlutterDataCallback, FlutterEngine, FlutterEngineResult_kSuccess,
+    FlutterDataCallback, FlutterEngine, FlutterEngineGetCurrentTime, FlutterEngineResult_kSuccess,
     FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse,
     FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle,
     FlutterPlatformMessageReleaseResponseHandle,
@@ -13,18 +14,20 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
 use crate::flutter_engine_rs::platform_channels::binary_messenger::{
     BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
-use crate::flutter_engine_rs::task_runner::ScheduledTask;
+use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngine,
     handlers: HashMap<String, BinaryMessageHandler>,
+    tx_tasks: mpsc::Sender<ScheduledTask>,
 }
 
 impl BinaryMessengerImpl {
-    pub fn new() -> Self {
+    pub fn new(tx_tasks: mpsc::Sender<ScheduledTask>) -> Self {
         Self {
             flutter_engine: null_mut(),
             handlers: HashMap::new(),
+            tx_tasks,
         }
     }
 
@@ -41,12 +44,34 @@ extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut c
     let captures = unsafe { Box::from_raw(user_data as *mut Captures) };
 
     let data = if !data.is_null() && data_size != 0 {
-        Some(unsafe { std::slice::from_raw_parts(data, data_size) })
+        Some(unsafe { std::slice::from_raw_parts(data, data_size).to_vec() })
     } else {
         None
     };
 
     captures.reply.unwrap()(data);
+}
+
+fn run_on_platform_thread<F, R>(tx_tasks: &mpsc::Sender<ScheduledTask>, f: F) -> R
+where
+    F: FnOnce() -> R + 'static,
+    R: 'static,
+{
+    let (tx_response, rx_response) = mpsc::channel();
+
+    tx_tasks
+        .send(ScheduledTask {
+            task: Task::Callback(Box::new(move || {
+                tx_response.send(f()).unwrap();
+            })),
+            target_time: unsafe { FlutterEngineGetCurrentTime() },
+            time_posted: Instant::now(),
+        })
+        .expect("Failed to send callback to platform thread");
+
+    rx_response
+        .recv()
+        .expect("Failed to get response from channel")
 }
 
 impl BinaryMessenger for BinaryMessengerImpl {
@@ -57,22 +82,31 @@ impl BinaryMessenger for BinaryMessengerImpl {
             let message_bytes =
                 unsafe { std::slice::from_raw_parts(message.message, message.message_size) };
 
-            let response_handle = message.response_handle;
+            let tx_tasks = self.tx_tasks.clone();
             let engine_handle = self.flutter_engine;
-            let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<&[u8]>| {
-                let data = reply.map(|v| v.as_ptr()).unwrap_or(null());
-                let data_size = reply.map(|v| v.len()).unwrap_or(0);
-                unsafe {
-                    FlutterEngineSendPlatformMessageResponse(
-                        engine_handle,
-                        response_handle,
-                        data,
-                        data_size,
-                    )
-                };
+            let response_handle = message.response_handle;
+
+            let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<Vec<u8>>| {
+                run_on_platform_thread(&tx_tasks, move || {
+                    let (data, data_length) = reply
+                        .as_ref()
+                        .map(|v| (v.as_ptr(), v.len()))
+                        .unwrap_or((null(), 0));
+
+                    unsafe {
+                        FlutterEngineSendPlatformMessageResponse(
+                            engine_handle,
+                            response_handle,
+                            data,
+                            data_length,
+                        )
+                    };
+                });
             }));
+
             handler.as_mut().unwrap()(message_bytes, reply_handler);
         } else {
+            // This one already runs on the platform thread, no need to wrap the call.
             unsafe {
                 FlutterEngineSendPlatformMessageResponse(
                     self.flutter_engine,
@@ -87,8 +121,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
     fn send(&mut self, channel: &str, message: &[u8], reply: BinaryReply) {
         if reply.is_some() {
             let captures = Box::into_raw(Box::new(Captures { reply }));
-            let result = send_message_with_reply(
-                self.flutter_engine,
+            let result = self.send_message_with_reply(
                 channel,
                 message,
                 Some(message_reply),
@@ -98,7 +131,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
                 let _ = unsafe { Box::from_raw(captures) };
             }
         } else {
-            send_message_with_reply(self.flutter_engine, channel, message, None, null_mut());
+            self.send_message_with_reply(channel, message, None, null_mut());
         };
     }
 
@@ -111,42 +144,53 @@ impl BinaryMessenger for BinaryMessengerImpl {
     }
 }
 
-fn send_message_with_reply(
-    flutter_engine: FlutterEngine,
-    channel: &str,
-    message: &[u8],
-    reply: FlutterDataCallback,
-    user_data: *mut c_void,
-) -> bool {
-    let mut response_handle = null_mut();
-    if reply.is_some() && !user_data.is_null() {
-        let result = unsafe {
-            FlutterPlatformMessageCreateResponseHandle(
-                flutter_engine,
-                reply,
-                user_data,
-                &mut response_handle,
-            )
-        };
-        if result != FlutterEngineResult_kSuccess {
-            eprintln!("Failed to create response handle");
-            return false;
+impl BinaryMessengerImpl {
+    fn send_message_with_reply(
+        &mut self,
+        channel: &str,
+        message: &[u8],
+        reply: FlutterDataCallback,
+        user_data: *mut c_void,
+    ) -> bool {
+        let flutter_engine = self.flutter_engine;
+
+        let mut response_handle = null_mut();
+        if reply.is_some() && !user_data.is_null() {
+            let result = run_on_platform_thread(&self.tx_tasks, move || unsafe {
+                FlutterPlatformMessageCreateResponseHandle(
+                    flutter_engine,
+                    reply,
+                    user_data,
+                    &mut response_handle,
+                )
+            });
+
+            if result != FlutterEngineResult_kSuccess {
+                eprintln!("Failed to create response handle");
+                return false;
+            }
         }
-    }
 
-    let channel_cstring = CString::new(channel).unwrap();
-    let platform_message = FlutterPlatformMessage {
-        struct_size: size_of::<FlutterPlatformMessage>(),
-        channel: channel_cstring.as_ptr(),
-        message: message.as_ptr(),
-        message_size: message.len(),
-        response_handle,
-    };
+        let channel_cstring = CString::new(channel).unwrap();
+        let platform_message = FlutterPlatformMessage {
+            struct_size: size_of::<FlutterPlatformMessage>(),
+            channel: channel_cstring.as_ptr(),
+            message: message.as_ptr(),
+            message_size: message.len(),
+            response_handle,
+        };
 
-    let message_result =
-        unsafe { FlutterEngineSendPlatformMessage(flutter_engine, &platform_message) };
-    if !response_handle.is_null() {
-        unsafe { FlutterPlatformMessageReleaseResponseHandle(flutter_engine, response_handle) };
+        let message_result = run_on_platform_thread(&self.tx_tasks, move || unsafe {
+            FlutterEngineSendPlatformMessage(flutter_engine, &platform_message)
+        });
+
+        if !response_handle.is_null() {
+            run_on_platform_thread(&self.tx_tasks, move || {
+                unsafe {
+                    FlutterPlatformMessageReleaseResponseHandle(flutter_engine, response_handle)
+                };
+            });
+        }
+        message_result == FlutterEngineResult_kSuccess
     }
-    message_result == FlutterEngineResult_kSuccess
 }

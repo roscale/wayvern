@@ -64,7 +64,7 @@ impl<'m, T> BasicMessageChannel<'m, T> {
                 let unencoded_reply: MessageReply<T> =
                     Some(Box::new(move |response: Option<T>| {
                         let response = codec.encode_message(&response.unwrap());
-                        reply.as_mut().unwrap()(Some(&response));
+                        reply.as_mut().unwrap()(Some(response));
                     }));
 
                 handler(Some(message), unencoded_reply);

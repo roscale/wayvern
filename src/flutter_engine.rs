@@ -94,10 +94,6 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                     error!("Failed to send view_id {view_id} to tx_present, {err}");
                 }
             }),
-            platform_message_callback: Box::new(|_message, _user_data| {
-                let thread_id = std::thread::current().id();
-                dbg!(&thread_id);
-            }),
         },
         UserData {
             proc_resolver: get_proc_address,

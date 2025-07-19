@@ -1,13 +1,10 @@
 use std::collections::BinaryHeap;
-use std::ops::Deref;
 use std::time::{Duration, Instant};
 use std::{cmp::Ordering, sync::mpsc};
 
-use tracing::warn;
-
 use crate::flutter_engine_rs::engine_handle::EngineHandle;
 use crate::flutter_engine_rs::flutter_engine_sys::{
-    FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask, FlutterTaskRunner,
+    FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask,
 };
 use crate::flutter_engine_rs::user_data::TaskRunnerUserData;
 
@@ -125,11 +122,6 @@ pub fn spawn_task_runner() -> TaskRunner {
                 }
 
                 let task = tasks.pop().unwrap();
-
-                warn!(
-                    "Flutter task missed deadline by {}ns",
-                    now - task.target_time
-                );
 
                 match task.task {
                     Task::FlutterTask(flutter_task) => {

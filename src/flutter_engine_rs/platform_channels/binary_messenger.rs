@@ -7,7 +7,7 @@ use crate::flutter_engine_rs::platform_channels::{
     method_channel::MethodChannel, method_codec::MethodCodec, method_result::MethodResult,
 };
 
-pub type BinaryReply = Option<Box<dyn FnMut(Option<&[u8]>)>>;
+pub type BinaryReply = Option<Box<dyn FnMut(Option<Vec<u8>>)>>;
 
 pub type BinaryMessageHandler = Option<Box<dyn FnMut(&[u8], BinaryReply)>>;
 

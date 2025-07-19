@@ -37,14 +37,14 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
         let codec = self.codec.clone();
         let channel_name = self.name.clone();
 
-        let reply_handler: BinaryReply = Some(Box::new(move |response: Option<&[u8]>| {
+        let reply_handler: BinaryReply = Some(Box::new(move |response: Option<Vec<u8>>| {
             let response = if let Some(response) = response {
                 response
             } else {
                 result.not_implemented();
                 return;
             };
-            codec.decode_and_process_response_envelope(response, result.as_mut());
+            codec.decode_and_process_response_envelope(&response, result.as_mut());
         }));
 
         self.messenger.send(&channel_name, &message, reply_handler);
