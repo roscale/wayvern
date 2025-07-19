@@ -19,6 +19,8 @@ use std::{
 };
 use user_data::EngineUserData;
 
+use crate::flutter_engine_rs::platform_channels::binary_messenger_impl::BinaryMessengerImpl;
+
 pub struct Engine<UserData> {
     handle: EngineHandle,
     _engine_user_data: Box<EngineUserData<UserData>>,
@@ -72,7 +74,9 @@ impl<UserData> Engine<UserData> {
 
         let elf_path = CString::new(bundle_path.join("lib/libapp.so").as_os_str().as_bytes())?;
 
-        let engine_user_data = Box::new(user_data::EngineUserData {
+        let binary_messenger = BinaryMessengerImpl::new();
+
+        let mut engine_user_data = Box::new(user_data::EngineUserData {
             proc_resolver_callback,
             platform_message_callback,
             vsync_callback,
@@ -81,6 +85,7 @@ impl<UserData> Engine<UserData> {
             make_resource_current_callback,
             present_callback,
             request_texture_callback,
+            binary_messenger,
             user_data,
         });
 
@@ -202,6 +207,8 @@ impl<UserData> Engine<UserData> {
                 &mut handle,
             )
         };
+
+        engine_user_data.binary_messenger.set_flutter_engine(handle);
 
         ensure!(
             result == 0,

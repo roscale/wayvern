@@ -6,13 +6,12 @@ use crate::flutter_engine_rs::{
         ClearCurrentCallback, MakeCurrentCallback, MakeResourceCurrentCallback,
         PlatformMessageCallback, PresentCallback, ProcResolverCallback, RequestTextureCallback,
         VSyncCallback,
-    },
-    task_runner::Task,
+    }, platform_channels::binary_messenger_impl::BinaryMessengerImpl, task_runner::ScheduledTask
 };
 
 pub struct TaskRunnerUserData {
     pub thread_id: ThreadId,
-    pub tasks_tx: mpsc::Sender<Task>,
+    pub tasks_tx: mpsc::Sender<ScheduledTask>,
 }
 
 pub struct EngineUserData<UserData> {
@@ -24,5 +23,6 @@ pub struct EngineUserData<UserData> {
     pub make_resource_current_callback: MakeResourceCurrentCallback<UserData>,
     pub present_callback: PresentCallback<UserData>,
     pub request_texture_callback: RequestTextureCallback<UserData>,
+    pub binary_messenger: BinaryMessengerImpl,
     pub user_data: UserData,
 }

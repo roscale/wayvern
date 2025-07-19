@@ -1,7 +1,9 @@
 use std::collections::BinaryHeap;
 use std::ops::Deref;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{cmp::Ordering, sync::mpsc};
+
+use tracing::warn;
 
 use crate::flutter_engine_rs::engine_handle::EngineHandle;
 use crate::flutter_engine_rs::flutter_engine_sys::{
@@ -9,35 +11,28 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
 };
 use crate::flutter_engine_rs::user_data::TaskRunnerUserData;
 
-#[derive(Debug, Copy, Clone)]
-pub struct TaskRunnerHandle(pub FlutterTaskRunner);
-
-unsafe impl Send for TaskRunnerHandle {}
-
-impl Deref for TaskRunnerHandle {
-    type Target = FlutterTaskRunner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub enum Task {
+    FlutterTask(FlutterTask),
+    Callback(Box<dyn FnOnce()>),
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct Task {
-    pub runner: TaskRunnerHandle,
-    pub task: u64,
+unsafe impl Send for Task {}
+
+pub struct ScheduledTask {
+    pub task: Task,
     pub target_time: u64,
+    pub time_posted: Instant,
 }
 
-impl PartialEq<Self> for Task {
-    fn eq(&self, other: &Self) -> bool {
-        self.task == other.task
+impl PartialEq<Self> for ScheduledTask {
+    fn eq(&self, _other: &Self) -> bool {
+        false
     }
 }
 
-impl Eq for Task {}
+impl Eq for ScheduledTask {}
 
-impl Ord for Task {
+impl Ord for ScheduledTask {
     fn cmp(&self, other: &Self) -> Ordering {
         // Flip the ordering so that the BinaryHeap becomes a min-heap.
         // Smaller target times have higher priority.
@@ -46,20 +41,20 @@ impl Ord for Task {
         other
             .target_time
             .cmp(&self.target_time)
-            .then_with(|| self.task.cmp(&other.task))
+            .then_with(|| self.time_posted.cmp(&other.time_posted))
     }
 }
 
-impl PartialOrd<Self> for Task {
+impl PartialOrd<Self> for ScheduledTask {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-fn get_next_task_due_time(tasks: &mut BinaryHeap<Task>) -> Duration {
+fn get_next_task_due_time(tasks: &mut BinaryHeap<ScheduledTask>) -> Duration {
     match tasks.peek() {
         None => Duration::MAX,
-        Some(Task { target_time, .. }) => {
+        Some(ScheduledTask { target_time, .. }) => {
             let now = unsafe { FlutterEngineGetCurrentTime() };
             let duration_ns = target_time.checked_sub(now).unwrap_or(0);
             Duration::from_nanos(duration_ns)
@@ -67,7 +62,10 @@ fn get_next_task_due_time(tasks: &mut BinaryHeap<Task>) -> Duration {
     }
 }
 
-fn drain_channel(rx: &mut mpsc::Receiver<Task>, tasks: &mut BinaryHeap<Task>) -> Result<(), ()> {
+fn drain_channel(
+    rx: &mut mpsc::Receiver<ScheduledTask>,
+    tasks: &mut BinaryHeap<ScheduledTask>,
+) -> Result<(), ()> {
     loop {
         match rx.try_recv() {
             Ok(task) => {
@@ -121,19 +119,31 @@ pub fn spawn_task_runner() -> TaskRunner {
             }
 
             while let Some(task) = tasks.peek() {
-                if task.target_time > unsafe { FlutterEngineGetCurrentTime() } {
+                let now = unsafe { FlutterEngineGetCurrentTime() };
+                if task.target_time > now {
                     break;
                 }
 
-                let flutter_task = FlutterTask {
-                    runner: *task.runner,
-                    task: task.task,
-                };
+                let task = tasks.pop().unwrap();
 
-                unsafe {
-                    FlutterEngineRunTask(flutter_engine_handle, &flutter_task as *const FlutterTask)
-                };
-                tasks.pop();
+                warn!(
+                    "Flutter task missed deadline by {}ns",
+                    now - task.target_time
+                );
+
+                match task.task {
+                    Task::FlutterTask(flutter_task) => {
+                        unsafe {
+                            FlutterEngineRunTask(
+                                flutter_engine_handle,
+                                &flutter_task as *const FlutterTask,
+                            )
+                        };
+                    }
+                    Task::Callback(fn_once) => {
+                        fn_once();
+                    }
+                }
 
                 if drain_channel(&mut tasks_rx, &mut tasks).is_err() {
                     return;

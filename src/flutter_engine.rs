@@ -95,7 +95,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 }
             }),
             platform_message_callback: Box::new(|_message, _user_data| {
-                println!("RECEIVING on {:?}", _message.channel);
+                let thread_id = std::thread::current().id();
+                dbg!(&thread_id);
             }),
         },
         UserData {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
+use std::sync::mpsc;
 
 use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterDataCallback, FlutterEngine, FlutterEngineResult_kSuccess,
@@ -12,6 +13,7 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
 use crate::flutter_engine_rs::platform_channels::binary_messenger::{
     BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
+use crate::flutter_engine_rs::task_runner::ScheduledTask;
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngine,

@@ -5,10 +5,12 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterOpenGLTargetType_kFlutterOpenGLTargetTypeTexture, FlutterOpenGLTexture,
     FlutterPlatformMessage, FlutterPresentViewInfo, FlutterTask,
 };
-use crate::flutter_engine_rs::task_runner::{Task, TaskRunnerHandle};
+use crate::flutter_engine_rs::platform_channels::binary_messenger::BinaryMessenger;
+use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
 use crate::flutter_engine_rs::user_data::{EngineUserData, TaskRunnerUserData};
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
+use std::time::Instant;
 
 pub unsafe extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
     let user_data: &mut TaskRunnerUserData =
@@ -27,10 +29,10 @@ pub unsafe extern "C" fn post_task_callback(
 
     user_data
         .tasks_tx
-        .send(Task {
-            runner: TaskRunnerHandle(task.runner),
-            task: task.task,
+        .send(ScheduledTask {
+            task: Task::FlutterTask(task),
             target_time,
+            time_posted: Instant::now(),
         })
         .expect("Failed to send task");
 }
@@ -91,7 +93,9 @@ pub unsafe extern "C" fn platform_message_callback<UserData>(
     let user_data: &mut EngineUserData<UserData> =
         unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.platform_message_callback)(unsafe { &*message }, &mut user_data.user_data);
+    user_data
+        .binary_messenger
+        .handle_message(unsafe { &*message });
 }
 
 pub unsafe extern "C" fn create_backing_store_callback<UserData>(
