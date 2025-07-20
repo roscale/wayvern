@@ -22,7 +22,7 @@ use std::{
 use user_data::EngineUserData;
 
 use crate::flutter_engine_rs::{
-    platform_channels::{binary_messenger_impl::BinaryMessengerImpl, method_channel::MethodChannel},
+    platform_channels::binary_messenger_impl::BinaryMessengerImpl,
     task_runner::{ScheduledTask, Task},
 };
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::time::Instant;
 
 use crate::flutter_engine_rs::flutter_engine_sys::{
@@ -18,7 +18,7 @@ use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngine,
-    handlers: HashMap<String, BinaryMessageHandler>,
+    handlers: Mutex<HashMap<String, BinaryMessageHandler>>,
     tx_tasks: mpsc::Sender<ScheduledTask>,
 }
 
@@ -26,7 +26,7 @@ impl BinaryMessengerImpl {
     pub fn new(tx_tasks: mpsc::Sender<ScheduledTask>) -> Self {
         Self {
             flutter_engine: null_mut(),
-            handlers: HashMap::new(),
+            handlers: Mutex::new(HashMap::new()),
             tx_tasks,
         }
     }
@@ -78,7 +78,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
     fn handle_message(&mut self, message: &FlutterPlatformMessage) {
         let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
         let channel = channel.to_str().unwrap();
-        if let Some(handler) = self.handlers.get_mut(channel) {
+        if let Some(handler) = self.handlers.lock().unwrap().get_mut(channel) {
             let message_bytes =
                 unsafe { std::slice::from_raw_parts(message.message, message.message_size) };
 
@@ -137,9 +137,12 @@ impl BinaryMessenger for BinaryMessengerImpl {
 
     fn set_message_handler(&mut self, channel: &str, handler: BinaryMessageHandler) {
         if handler.is_some() {
-            self.handlers.insert(channel.to_string(), handler);
+            self.handlers
+                .lock()
+                .unwrap()
+                .insert(channel.to_string(), handler);
         } else {
-            self.handlers.remove(channel);
+            self.handlers.lock().unwrap().remove(channel);
         };
     }
 }
