@@ -3,10 +3,9 @@ use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use std::sync::{Mutex, mpsc};
-use std::time::Instant;
 
 use crate::flutter_engine_rs::flutter_engine_sys::{
-    FlutterDataCallback, FlutterEngine, FlutterEngineGetCurrentTime, FlutterEngineResult_kSuccess,
+    FlutterDataCallback, FlutterEngine, FlutterEngineResult_kSuccess,
     FlutterEngineSendPlatformMessage, FlutterEngineSendPlatformMessageResponse,
     FlutterPlatformMessage, FlutterPlatformMessageCreateResponseHandle,
     FlutterPlatformMessageReleaseResponseHandle,
@@ -14,7 +13,7 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
 use crate::flutter_engine_rs::platform_channels::binary_messenger::{
     BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
-use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
+use crate::flutter_engine_rs::task_runner::{PostCallback, ScheduledTask};
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngine,
@@ -52,28 +51,6 @@ extern "C" fn message_reply(data: *const u8, data_size: usize, user_data: *mut c
     captures.reply.unwrap()(data);
 }
 
-fn run_on_platform_thread<F, R>(tx_tasks: &mpsc::Sender<ScheduledTask>, f: F) -> R
-where
-    F: FnOnce() -> R + 'static,
-    R: 'static,
-{
-    let (tx_response, rx_response) = mpsc::channel();
-
-    tx_tasks
-        .send(ScheduledTask {
-            task: Task::Callback(Box::new(move || {
-                tx_response.send(f()).unwrap();
-            })),
-            target_time: unsafe { FlutterEngineGetCurrentTime() },
-            time_posted: Instant::now(),
-        })
-        .expect("Failed to send callback to platform thread");
-
-    rx_response
-        .recv()
-        .expect("Failed to get response from channel")
-}
-
 impl BinaryMessenger for BinaryMessengerImpl {
     fn handle_message(&mut self, message: &FlutterPlatformMessage) {
         let channel = unsafe { std::ffi::CStr::from_ptr(message.channel) };
@@ -87,7 +64,7 @@ impl BinaryMessenger for BinaryMessengerImpl {
             let response_handle = message.response_handle;
 
             let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<Vec<u8>>| {
-                run_on_platform_thread(&tx_tasks, move || {
+                tx_tasks.post_callback(move || {
                     let (data, data_length) = reply
                         .as_ref()
                         .map(|v| (v.as_ptr(), v.len()))
@@ -159,7 +136,7 @@ impl BinaryMessengerImpl {
 
         let mut response_handle = null_mut();
         if reply.is_some() && !user_data.is_null() {
-            let result = run_on_platform_thread(&self.tx_tasks, move || unsafe {
+            let result = self.tx_tasks.post_callback(move || unsafe {
                 FlutterPlatformMessageCreateResponseHandle(
                     flutter_engine,
                     reply,
@@ -183,12 +160,12 @@ impl BinaryMessengerImpl {
             response_handle,
         };
 
-        let message_result = run_on_platform_thread(&self.tx_tasks, move || unsafe {
+        let message_result = self.tx_tasks.post_callback(move || unsafe {
             FlutterEngineSendPlatformMessage(flutter_engine, &platform_message)
         });
 
         if !response_handle.is_null() {
-            run_on_platform_thread(&self.tx_tasks, move || {
+            self.tx_tasks.post_callback(move || {
                 unsafe {
                     FlutterPlatformMessageReleaseResponseHandle(flutter_engine, response_handle)
                 };

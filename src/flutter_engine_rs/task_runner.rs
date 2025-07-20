@@ -1,11 +1,12 @@
 use std::collections::BinaryHeap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{cmp::Ordering, sync::mpsc};
 
 use crate::flutter_engine_rs::engine_handle::EngineHandle;
 use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask,
 };
+use crate::flutter_engine_rs::monotonic_time::get_monotonic_time;
 use crate::flutter_engine_rs::user_data::TaskRunnerUserData;
 
 pub enum Task {
@@ -18,7 +19,6 @@ unsafe impl Send for Task {}
 pub struct ScheduledTask {
     pub task: Task,
     pub target_time: u64,
-    pub time_posted: Instant,
 }
 
 impl PartialEq<Self> for ScheduledTask {
@@ -35,10 +35,7 @@ impl Ord for ScheduledTask {
         // Smaller target times have higher priority.
         // In case of a tie, we compare the task ID.
         // This step is necessary to make implementations of `PartialEq` and `Ord` consistent.
-        other
-            .target_time
-            .cmp(&self.target_time)
-            .then_with(|| self.time_posted.cmp(&other.time_posted))
+        other.target_time.cmp(&self.target_time)
     }
 }
 
@@ -117,6 +114,7 @@ pub fn spawn_task_runner() -> TaskRunner {
 
             while let Some(task) = tasks.peek() {
                 let now = unsafe { FlutterEngineGetCurrentTime() };
+
                 if task.target_time > now {
                     break;
                 }
@@ -153,5 +151,34 @@ pub fn spawn_task_runner() -> TaskRunner {
         }),
         _join_handle: join_handle,
         engine_handle_tx: flutter_engine_handle_tx,
+    }
+}
+
+pub trait PostCallback {
+    fn post_callback<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> R + 'static,
+        R: 'static;
+}
+
+impl PostCallback for mpsc::Sender<ScheduledTask> {
+    fn post_callback<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> R + 'static,
+        R: 'static,
+    {
+        let (tx_response, rx_response) = mpsc::channel();
+
+        self.send(ScheduledTask {
+            task: Task::Callback(Box::new(move || {
+                tx_response.send(f()).unwrap();
+            })),
+            target_time: get_monotonic_time(),
+        })
+        .expect("Failed to send callback to platform thread");
+
+        rx_response
+            .recv()
+            .expect("Failed to get response from channel")
     }
 }

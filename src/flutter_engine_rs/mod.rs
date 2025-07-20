@@ -1,11 +1,16 @@
+mod binary_messenger_impl;
 mod engine_callbacks;
 mod engine_handle;
 mod ffi;
 mod flutter_engine_sys;
+mod monotonic_time;
 mod platform_channels;
 mod task_runner;
 mod user_data;
 
+use crate::flutter_engine_rs::{
+    binary_messenger_impl::BinaryMessengerImpl, monotonic_time::get_monotonic_time,
+};
 use anyhow::{Result, ensure};
 pub use engine_callbacks::EngineCallbacks;
 use engine_handle::EngineHandle;
@@ -16,42 +21,14 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf, absolute},
     ptr::{null, null_mut},
-    sync::mpsc,
-    time::Instant,
 };
+use task_runner::PostCallback;
 use user_data::EngineUserData;
-
-use crate::flutter_engine_rs::{
-    platform_channels::binary_messenger_impl::BinaryMessengerImpl,
-    task_runner::{ScheduledTask, Task},
-};
 
 pub struct Engine<UserData> {
     handle: EngineHandle,
     _engine_user_data: Box<EngineUserData<UserData>>,
-    _platform_task_runner: task_runner::TaskRunner,
-}
-
-fn run_on_platform_thread<F, R>(tx_tasks: &mpsc::Sender<ScheduledTask>, f: F) -> R
-where
-    F: FnOnce() -> R + 'static,
-    R: 'static,
-{
-    let (tx_response, rx_response) = mpsc::channel();
-
-    tx_tasks
-        .send(ScheduledTask {
-            task: Task::Callback(Box::new(move || {
-                tx_response.send(f()).unwrap();
-            })),
-            target_time: unsafe { FlutterEngineGetCurrentTime() },
-            time_posted: Instant::now(),
-        })
-        .expect("Failed to send callback to platform thread");
-
-    rx_response
-        .recv()
-        .expect("Failed to get response from channel")
+    platform_task_runner: task_runner::TaskRunner,
 }
 
 impl<UserData> Engine<UserData> {
@@ -245,10 +222,10 @@ impl<UserData> Engine<UserData> {
             .send(EngineHandle(handle))
             .expect("Failed to send Flutter engine handle to task runner");
 
-        let result =
-            run_on_platform_thread(&platform_task_runner.user_data.tasks_tx, move || unsafe {
-                FlutterEngineRunInitialized(handle)
-            });
+        let result = platform_task_runner
+            .user_data
+            .tasks_tx
+            .post_callback(move || unsafe { FlutterEngineRunInitialized(handle) });
 
         ensure!(
             result == 0,
@@ -258,7 +235,7 @@ impl<UserData> Engine<UserData> {
         let flutter_engine = Self {
             handle: EngineHandle(handle),
             _engine_user_data: engine_user_data,
-            _platform_task_runner: platform_task_runner,
+            platform_task_runner,
         };
 
         Ok(flutter_engine)
@@ -293,10 +270,11 @@ impl<UserData> Engine<UserData> {
 
         let handle = self.handle;
 
-        let result = run_on_platform_thread(
-            &self._platform_task_runner.user_data.tasks_tx,
-            move || unsafe { FlutterEngineAddView(*handle, &info) },
-        );
+        let result = self
+            .platform_task_runner
+            .user_data
+            .tasks_tx
+            .post_callback(move || unsafe { FlutterEngineAddView(*handle, &info) });
 
         ensure!(result == 0, "Could add view {view_id}, error {result}");
 
@@ -308,12 +286,13 @@ impl<UserData> Engine<UserData> {
 
         let handle = self.handle;
 
-        let result = run_on_platform_thread(
-            &self._platform_task_runner.user_data.tasks_tx,
-            move || unsafe {
+        let result = self
+            .platform_task_runner
+            .user_data
+            .tasks_tx
+            .post_callback(move || unsafe {
                 FlutterEngineSendWindowMetricsEvent(*handle, &view_metrics as *const _)
-            },
-        );
+            });
 
         ensure!(
             result == 0,
@@ -324,10 +303,7 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn get_current_time(&self) -> u64 {
-        run_on_platform_thread(
-            &self._platform_task_runner.user_data.tasks_tx,
-            move || unsafe { FlutterEngineGetCurrentTime() },
-        )
+        get_monotonic_time()
     }
 
     pub fn on_vsync(
@@ -338,17 +314,18 @@ impl<UserData> Engine<UserData> {
     ) -> Result<()> {
         let handle = self.handle;
 
-        let result = run_on_platform_thread(
-            &self._platform_task_runner.user_data.tasks_tx,
-            move || unsafe {
+        let result = self
+            .platform_task_runner
+            .user_data
+            .tasks_tx
+            .post_callback(move || unsafe {
                 FlutterEngineOnVsync(
                     *handle,
                     baton,
                     frame_start_time_nanos,
                     frame_target_time_nanos,
                 )
-            },
-        );
+            });
 
         ensure!(result == 0, "Could not send vsync baton, error {result}");
 

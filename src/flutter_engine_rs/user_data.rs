@@ -2,11 +2,11 @@ use std::sync::mpsc;
 use std::thread::ThreadId;
 
 use crate::flutter_engine_rs::{
+    binary_messenger_impl::BinaryMessengerImpl,
     engine_callbacks::{
         ClearCurrentCallback, MakeCurrentCallback, MakeResourceCurrentCallback, PresentCallback,
         ProcResolverCallback, RequestTextureCallback, VSyncCallback,
     },
-    platform_channels::binary_messenger_impl::BinaryMessengerImpl,
     task_runner::ScheduledTask,
 };
 

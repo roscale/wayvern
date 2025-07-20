@@ -10,7 +10,6 @@ use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
 use crate::flutter_engine_rs::user_data::{EngineUserData, TaskRunnerUserData};
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
-use std::time::Instant;
 
 pub unsafe extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
     let user_data: &mut TaskRunnerUserData =
@@ -32,7 +31,6 @@ pub unsafe extern "C" fn post_task_callback(
         .send(ScheduledTask {
             task: Task::FlutterTask(task),
             target_time,
-            time_posted: Instant::now(),
         })
         .expect("Failed to send task");
 }
