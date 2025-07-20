@@ -4,7 +4,7 @@ mod engine_handle;
 mod ffi;
 mod flutter_engine_sys;
 mod monotonic_time;
-mod platform_channels;
+pub mod platform_channels;
 mod task_runner;
 mod user_data;
 
@@ -22,12 +22,11 @@ use std::{
     path::{Path, PathBuf, absolute},
     ptr::{null, null_mut},
 };
-use task_runner::PostCallback;
 use user_data::EngineUserData;
 
 pub struct Engine<UserData> {
     handle: EngineHandle,
-    _engine_user_data: Box<EngineUserData<UserData>>,
+    engine_user_data: Box<EngineUserData<UserData>>,
     platform_task_runner: task_runner::TaskRunner,
 }
 
@@ -78,8 +77,7 @@ impl<UserData> Engine<UserData> {
         let elf_path = CString::new(bundle_path.join("lib/libapp.so").as_os_str().as_bytes())?;
 
         let platform_task_runner = task_runner::spawn_task_runner();
-        let binary_messenger =
-            BinaryMessengerImpl::new(platform_task_runner.user_data.tasks_tx.clone());
+        let binary_messenger = BinaryMessengerImpl::new((*platform_task_runner.poster).clone());
 
         let mut engine_user_data = Box::new(user_data::EngineUserData {
             proc_resolver_callback,
@@ -148,7 +146,7 @@ impl<UserData> Engine<UserData> {
                         struct_size: size_of::<FlutterCustomTaskRunners>(),
                         platform_task_runner: &FlutterTaskRunnerDescription {
                             struct_size: size_of::<FlutterTaskRunnerDescription>(),
-                            user_data: &*platform_task_runner.user_data as *const _ as *mut _,
+                            user_data: &*platform_task_runner.poster as *const _ as *mut _,
                             runs_task_on_current_thread_callback: Some(
                                 ffi::runs_task_on_current_thread_callback,
                             ),
@@ -223,8 +221,7 @@ impl<UserData> Engine<UserData> {
             .expect("Failed to send Flutter engine handle to task runner");
 
         let result = platform_task_runner
-            .user_data
-            .tasks_tx
+            .poster
             .post_callback(move || unsafe { FlutterEngineRunInitialized(handle) });
 
         ensure!(
@@ -234,7 +231,7 @@ impl<UserData> Engine<UserData> {
 
         let flutter_engine = Self {
             handle: EngineHandle(handle),
-            _engine_user_data: engine_user_data,
+            engine_user_data,
             platform_task_runner,
         };
 
@@ -272,8 +269,7 @@ impl<UserData> Engine<UserData> {
 
         let result = self
             .platform_task_runner
-            .user_data
-            .tasks_tx
+            .poster
             .post_callback(move || unsafe { FlutterEngineAddView(*handle, &info) });
 
         ensure!(result == 0, "Could add view {view_id}, error {result}");
@@ -288,8 +284,7 @@ impl<UserData> Engine<UserData> {
 
         let result = self
             .platform_task_runner
-            .user_data
-            .tasks_tx
+            .poster
             .post_callback(move || unsafe {
                 FlutterEngineSendWindowMetricsEvent(*handle, &view_metrics as *const _)
             });
@@ -316,8 +311,7 @@ impl<UserData> Engine<UserData> {
 
         let result = self
             .platform_task_runner
-            .user_data
-            .tasks_tx
+            .poster
             .post_callback(move || unsafe {
                 FlutterEngineOnVsync(
                     *handle,
@@ -330,6 +324,10 @@ impl<UserData> Engine<UserData> {
         ensure!(result == 0, "Could not send vsync baton, error {result}");
 
         Ok(())
+    }
+
+    pub fn binary_messenger(&mut self) -> &mut BinaryMessengerImpl {
+        &mut self.engine_user_data.binary_messenger
     }
 
     pub fn _register_external_texture(&self, texture_id: i64) -> Result<()> {

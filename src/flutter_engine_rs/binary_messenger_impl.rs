@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ffi::{CString, c_void};
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
-use std::sync::{Mutex, mpsc};
+use std::sync::Mutex;
 
 use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterDataCallback, FlutterEngine, FlutterEngineResult_kSuccess,
@@ -13,20 +13,20 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
 use crate::flutter_engine_rs::platform_channels::binary_messenger::{
     BinaryMessageHandler, BinaryMessenger, BinaryReply,
 };
-use crate::flutter_engine_rs::task_runner::{PostCallback, ScheduledTask};
+use crate::flutter_engine_rs::task_runner::TaskPoster;
 
 pub struct BinaryMessengerImpl {
     flutter_engine: FlutterEngine,
     handlers: Mutex<HashMap<String, BinaryMessageHandler>>,
-    tx_tasks: mpsc::Sender<ScheduledTask>,
+    platform_task_poster: TaskPoster,
 }
 
 impl BinaryMessengerImpl {
-    pub fn new(tx_tasks: mpsc::Sender<ScheduledTask>) -> Self {
+    pub fn new(platform_task_poster: TaskPoster) -> Self {
         Self {
             flutter_engine: null_mut(),
             handlers: Mutex::new(HashMap::new()),
-            tx_tasks,
+            platform_task_poster,
         }
     }
 
@@ -59,12 +59,12 @@ impl BinaryMessenger for BinaryMessengerImpl {
             let message_bytes =
                 unsafe { std::slice::from_raw_parts(message.message, message.message_size) };
 
-            let tx_tasks = self.tx_tasks.clone();
+            let platform_task_poster = self.platform_task_poster.clone();
             let engine_handle = self.flutter_engine;
             let response_handle = message.response_handle;
 
             let reply_handler: BinaryReply = Some(Box::new(move |reply: Option<Vec<u8>>| {
-                tx_tasks.post_callback(move || {
+                platform_task_poster.post_callback(move || {
                     let (data, data_length) = reply
                         .as_ref()
                         .map(|v| (v.as_ptr(), v.len()))
@@ -136,7 +136,7 @@ impl BinaryMessengerImpl {
 
         let mut response_handle = null_mut();
         if reply.is_some() && !user_data.is_null() {
-            let result = self.tx_tasks.post_callback(move || unsafe {
+            let result = self.platform_task_poster.post_callback(move || unsafe {
                 FlutterPlatformMessageCreateResponseHandle(
                     flutter_engine,
                     reply,
@@ -160,12 +160,12 @@ impl BinaryMessengerImpl {
             response_handle,
         };
 
-        let message_result = self.tx_tasks.post_callback(move || unsafe {
+        let message_result = self.platform_task_poster.post_callback(move || unsafe {
             FlutterEngineSendPlatformMessage(flutter_engine, &platform_message)
         });
 
         if !response_handle.is_null() {
-            self.tx_tasks.post_callback(move || {
+            self.platform_task_poster.post_callback(move || {
                 unsafe {
                     FlutterPlatformMessageReleaseResponseHandle(flutter_engine, response_handle)
                 };

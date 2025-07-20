@@ -6,16 +6,15 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterPlatformMessage, FlutterPresentViewInfo, FlutterTask,
 };
 use crate::flutter_engine_rs::platform_channels::binary_messenger::BinaryMessenger;
-use crate::flutter_engine_rs::task_runner::{ScheduledTask, Task};
-use crate::flutter_engine_rs::user_data::{EngineUserData, TaskRunnerUserData};
+use crate::flutter_engine_rs::task_runner::TaskPoster;
+use crate::flutter_engine_rs::user_data::EngineUserData;
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
 
 pub unsafe extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
-    let user_data: &mut TaskRunnerUserData =
-        unsafe { &mut *(user_data as *mut TaskRunnerUserData) };
+    let task_poster: &mut TaskPoster = unsafe { &mut *(user_data as *mut TaskPoster) };
 
-    user_data.thread_id == std::thread::current().id()
+    task_poster.runs_task_on_current_thread()
 }
 
 pub unsafe extern "C" fn post_task_callback(
@@ -23,16 +22,9 @@ pub unsafe extern "C" fn post_task_callback(
     target_time: u64,
     user_data: *mut c_void,
 ) {
-    let user_data: &mut TaskRunnerUserData =
-        unsafe { &mut *(user_data as *mut TaskRunnerUserData) };
+    let task_poster: &mut TaskPoster = unsafe { &mut *(user_data as *mut TaskPoster) };
 
-    user_data
-        .tasks_tx
-        .send(ScheduledTask {
-            task: Task::FlutterTask(task),
-            target_time,
-        })
-        .expect("Failed to send task");
+    task_poster.post_flutter_task(task, target_time);
 }
 
 pub unsafe extern "C" fn gl_proc_resolver_callback<UserData>(

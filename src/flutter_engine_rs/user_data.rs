@@ -1,19 +1,10 @@
-use std::sync::mpsc;
-use std::thread::ThreadId;
-
 use crate::flutter_engine_rs::{
     binary_messenger_impl::BinaryMessengerImpl,
     engine_callbacks::{
         ClearCurrentCallback, MakeCurrentCallback, MakeResourceCurrentCallback, PresentCallback,
         ProcResolverCallback, RequestTextureCallback, VSyncCallback,
     },
-    task_runner::ScheduledTask,
 };
-
-pub struct TaskRunnerUserData {
-    pub thread_id: ThreadId,
-    pub tasks_tx: mpsc::Sender<ScheduledTask>,
-}
 
 pub struct EngineUserData<UserData> {
     pub proc_resolver_callback: ProcResolverCallback<UserData>,

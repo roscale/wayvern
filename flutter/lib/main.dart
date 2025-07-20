@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
+import 'package:wayvern_flutter/wayvern_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  Timer.periodic(const Duration(seconds: 1), (timer) {
+    spawnWindow();
+  });
 
   runWidget(
     ViewCollection(
@@ -20,7 +26,7 @@ void main() async {
 class MyApp extends StatelessWidget {
   final String title;
 
-  MyApp({super.key, required this.title});
+  const MyApp({super.key, required this.title});
 
   @override
   Widget build(BuildContext context) {
