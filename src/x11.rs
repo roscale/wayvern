@@ -1,5 +1,5 @@
-use std::os::fd::OwnedFd;
-
+use crate::state::{BackendState, State};
+use crate::x11::flutter_engine::{Flutter, start_flutter_engine};
 use anyhow::{Context, Result};
 use smithay::backend::allocator::dmabuf::AnyError;
 use smithay::backend::allocator::{Allocator, Slot};
@@ -21,10 +21,10 @@ use smithay::{
     utils::DeviceFd,
     wayland::dmabuf::DmabufFeedbackBuilder,
 };
+use std::os::fd::OwnedFd;
 use tracing::{error, info};
 
-use crate::flutter_engine::{Flutter, start_flutter_engine};
-use crate::state::{BackendState, State};
+mod flutter_engine;
 
 pub struct X11State {
     x11_handle: X11Handle,

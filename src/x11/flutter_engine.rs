@@ -1,10 +1,4 @@
-use crate::flutter_engine_rs::{
-    Engine, EngineCallbacks,
-    platform_channels::{
-        encodable_value::EncodableValue, method_channel::MethodChannel,
-        standard_method_codec::StandardMethodCodec,
-    },
-};
+use crate::flutter_engine_rs::{Engine, EngineCallbacks};
 use anyhow::{Context, Result};
 use smithay::{
     backend::{
@@ -19,7 +13,6 @@ use smithay::{
 };
 use std::{
     ffi::c_void,
-    rc::Rc,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
@@ -59,7 +52,7 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
 
     let (tx_present, rx_present) = calloop::channel::channel::<i64>();
 
-    let mut engine = Engine::<UserData>::new(
+    let engine = Engine::<UserData>::new(
         &state.common.flutter_project,
         !cfg!(debug_assertions),
         EngineCallbacks {
@@ -117,21 +110,6 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
         },
     )
     .with_context(|| "Could not create Engine")?;
-
-    MethodChannel::new(
-        engine.binary_messenger(),
-        "wayvern/nested_session".to_string(),
-        Rc::new(StandardMethodCodec::new()),
-    )
-    .set_method_call_handler(Some(Box::new(|method_call, mut result| {
-        if method_call.method() == "spawn_window" {
-            result.success(Some(EncodableValue::String(
-                "THIS is from rust".to_string(),
-            )));
-        } else {
-            result.not_implemented();
-        }
-    })));
 
     loop_handle
         .insert_source(rx_request_texture, |event, _, state| {

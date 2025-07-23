@@ -1,13 +1,16 @@
 use std::rc::Rc;
 
-use crate::flutter_engine_rs::platform_channels::binary_messenger::{BinaryMessageHandler, BinaryMessenger, BinaryReply};
+use crate::flutter_engine_rs::platform_channels::binary_messenger::{
+    BinaryMessageHandler, BinaryMessenger, BinaryReply,
+};
 use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine_rs::platform_channels::engine_method_result::EngineMethodResult;
 use crate::flutter_engine_rs::platform_channels::method_call::MethodCall;
 use crate::flutter_engine_rs::platform_channels::method_codec::MethodCodec;
 use crate::flutter_engine_rs::platform_channels::method_result::MethodResult;
 
-type MethodCallHandler<T> = Option<Box<dyn FnMut(MethodCall<T>, Box<dyn MethodResult<T>>)>>;
+pub type MethodCallHandler<T> = Box<dyn FnMut(MethodCall<T>, Box<dyn MethodResult<T>>)>;
+pub type MethodCallHandlerParameters<T> = (MethodCall<T>, Box<dyn MethodResult<T>>);
 
 pub struct MethodChannel<'m, T = EncodableValue> {
     messenger: &'m mut dyn BinaryMessenger,
@@ -16,7 +19,11 @@ pub struct MethodChannel<'m, T = EncodableValue> {
 }
 
 impl<'m, T: 'static> MethodChannel<'m, T> {
-    pub fn new(messenger: &'m mut dyn BinaryMessenger, name: String, codec: Rc<dyn MethodCodec<T>>) -> Self {
+    pub fn new(
+        messenger: &'m mut dyn BinaryMessenger,
+        name: String,
+        codec: Rc<dyn MethodCodec<T>>,
+    ) -> Self {
         Self {
             messenger,
             name,
@@ -24,7 +31,12 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
         }
     }
 
-    pub fn invoke_method(&mut self, method: &str, arguments: Option<Box<T>>, result: Option<Box<dyn MethodResult<T>>>) {
+    pub fn invoke_method(
+        &mut self,
+        method: &str,
+        arguments: Option<Box<T>>,
+        result: Option<Box<dyn MethodResult<T>>>,
+    ) {
         let method_call = MethodCall::new(method.to_string(), arguments);
         let message = self.codec.encode_method_call(&method_call);
         let mut result = if let Some(result) = result {
@@ -50,7 +62,7 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
         self.messenger.send(&channel_name, &message, reply_handler);
     }
 
-    pub fn set_method_call_handler(&mut self, handler: MethodCallHandler<T>) {
+    pub fn set_method_call_handler(&mut self, handler: Option<MethodCallHandler<T>>) {
         let mut handler = if let Some(handler) = handler {
             handler
         } else {
@@ -61,16 +73,20 @@ impl<'m, T: 'static> MethodChannel<'m, T> {
         let codec = self.codec.clone();
         let channel_name = self.name.clone();
 
-        let binary_handler: BinaryMessageHandler = Some(Box::new(move |message: &[u8], reply: BinaryReply| {
-            let mut result = EngineMethodResult::new(reply, codec.clone());
-            let method_call = codec.decode_method_call(message);
-            if let Some(method_call) = method_call {
-                handler(method_call, Box::new(result));
-            } else {
-                eprintln!("Unable to construct method call from message on channel {channel_name}");
-                result.not_implemented();
-            }
-        }));
-        self.messenger.set_message_handler(&self.name, binary_handler);
+        let binary_handler: BinaryMessageHandler =
+            Some(Box::new(move |message: &[u8], reply: BinaryReply| {
+                let mut result = EngineMethodResult::new(reply, codec.clone());
+                let method_call = codec.decode_method_call(message);
+                if let Some(method_call) = method_call {
+                    handler(method_call, Box::new(result));
+                } else {
+                    eprintln!(
+                        "Unable to construct method call from message on channel {channel_name}"
+                    );
+                    result.not_implemented();
+                }
+            }));
+        self.messenger
+            .set_message_handler(&self.name, binary_handler);
     }
 }

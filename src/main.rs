@@ -1,10 +1,5 @@
-use std::{
-    env::{self},
-    ffi::OsString,
-    path::PathBuf,
-    sync::Arc,
-};
-
+use crate::x11::init_x11_backend;
+use anyhow::{Context, Result};
 use smithay::{
     reexports::{
         calloop::{EventLoop, Interest, Mode, PostAction, generic::Generic},
@@ -12,13 +7,16 @@ use smithay::{
     },
     wayland::socket::ListeningSocketSource,
 };
+use state::State;
+use std::{
+    env::{self},
+    ffi::OsString,
+    path::PathBuf,
+    sync::Arc,
+};
 use tracing::{error, info, warn};
 
-use anyhow::{Context, Result};
-use state::State;
-
-use crate::x11::init_x11_backend;
-mod flutter_engine;
+mod channel_method_call_handler;
 mod flutter_engine_rs;
 mod state;
 mod wayland;
