@@ -24,7 +24,6 @@ fn main() {
 
     println!("cargo::rerun-if-changed=target/wayvern/flutter/version");
     println!("cargo::rerun-if-changed=target/wayvern/lib");
-    println!("cargo::rerun-if-changed=flutter/lib");
 
     if Path::new(FLUTTER_SDK_DIR).exists() {
         if should_update_flutter_sdk(flutter_version) {
@@ -47,8 +46,6 @@ fn main() {
 
     generate_bindings(&profile, &out_dir);
     link_library(&profile);
-
-    flutter_build(&profile);
 }
 
 fn should_update_flutter_sdk(version: &str) -> bool {
@@ -257,16 +254,4 @@ fn link_library(profile: &str) {
     println!("cargo:rustc-link-lib=flutter_engine");
 
     println!("cargo:rustc-link-arg=-Wl,-rpath=$ORIGIN,-rpath={dir}");
-}
-
-fn flutter_build(profile: &str) {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-
-    run_command(
-        Command::new(format!("{manifest_dir}/target/wayvern/flutter/bin/flutter"))
-            .current_dir("flutter")
-            .arg("build")
-            .arg("linux")
-            .arg(format!("--{profile}")),
-    );
 }

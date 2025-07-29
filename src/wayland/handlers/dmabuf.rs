@@ -1,8 +1,6 @@
-use crate::state::State;
+use crate::state::{BackendState, State};
 use smithay::{
-    backend::allocator::dmabuf::Dmabuf,
-    delegate_dmabuf,
-    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier},
+    backend::{allocator::dmabuf::Dmabuf, drm::DrmNode, renderer::ImportDma, x11::X11Backend}, delegate_dmabuf, reexports::wayland_server::Client, wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier}
 };
 
 impl DmabufHandler for State {
