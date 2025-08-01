@@ -1,5 +1,5 @@
 use crate::state::{BackendState, State};
-use crate::x11::flutter_engine::{Flutter, start_flutter_engine};
+use crate::x11::flutter_engine::start_flutter_engine;
 use anyhow::{Context, Result};
 use smithay::backend::allocator::dmabuf::AnyError;
 use smithay::backend::allocator::{Allocator, Slot};
@@ -26,6 +26,8 @@ use tracing::{error, info};
 
 mod flutter_engine;
 
+pub use flutter_engine::UserData;
+
 pub struct X11State {
     x11_handle: X11Handle,
     allocator: GbmAllocator<DrmDeviceFd>,
@@ -33,7 +35,6 @@ pub struct X11State {
     pub renderer: GlesRenderer,
     pub surfaces: Vec<Surface>,
 
-    pub flutter: Option<Flutter>,
     pub next_view_id: i64,
 }
 
@@ -50,29 +51,33 @@ impl X11State {
     pub fn create_dmabuf_allocator(&self) -> DmabufAllocator<GbmAllocator<DrmDeviceFd>> {
         DmabufAllocator(self.allocator.clone())
     }
+}
 
-    pub fn add_window(&mut self) -> Result<()> {
+impl State {
+    pub fn add_x11_window(&mut self) -> Result<()> {
+        let x11_state = self.backend.x11();
+
         let window = WindowBuilder::new()
             .title("Wayvern")
-            .build(&self.x11_handle)
+            .build(&x11_state.x11_handle)
             .with_context(|| "Failed to create window")?;
 
         let fourcc = window.format();
-        let filtered_modifiers = self.filtered_modifiers(fourcc);
+        let filtered_modifiers = x11_state.filtered_modifiers(fourcc);
 
-        let x11_surface = self
+        let x11_surface = x11_state
             .x11_handle
             .create_surface(
                 &window,
-                self.create_dmabuf_allocator(),
+                x11_state.create_dmabuf_allocator(),
                 filtered_modifiers.iter().copied(),
             )
             .with_context(|| "Failed to create surface")?;
 
-        let allocator = self.create_dmabuf_allocator();
+        let allocator = x11_state.create_dmabuf_allocator();
 
         let fourcc = window.format();
-        let modifiers = self.filtered_modifiers(fourcc);
+        let modifiers = x11_state.filtered_modifiers(fourcc);
 
         let swapchain = Swapchain::new(
             Box::new(allocator) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>,
@@ -87,8 +92,8 @@ impl X11State {
             window,
             x11_surface,
             view_id: {
-                let id = self.next_view_id;
-                self.next_view_id += 1;
+                let id = x11_state.next_view_id;
+                x11_state.next_view_id += 1;
                 id
             },
             swapchain,
@@ -97,9 +102,8 @@ impl X11State {
 
         let window_size = surface.window.size();
 
-        self.flutter
-            .as_mut()
-            .unwrap()
+        self.common
+            .flutter
             .engine
             .add_view(
                 surface.view_id,
@@ -109,7 +113,7 @@ impl X11State {
             )
             .with_context(|| format!("Failed to add new Flutter view {}", surface.view_id))?;
 
-        self.surfaces.push(surface);
+        x11_state.surfaces.push(surface);
 
         Ok(())
     }
@@ -144,7 +148,7 @@ pub fn init_x11_backend(
                 let x11 = state.backend.x11();
                 for surface in x11.surfaces.iter() {
                     if surface.window.id() == window_id {
-                        if let Err(err) = x11.flutter.as_mut().unwrap().engine.send_view_metrics(
+                        if let Err(err) = state.common.flutter.engine.send_view_metrics(
                             surface.view_id,
                             size.w as usize,
                             size.h as usize,
@@ -193,19 +197,16 @@ pub fn init_x11_backend(
         renderer,
         surfaces: vec![],
 
-        flutter: None,
         next_view_id: 0,
     }));
 
     let flutter = start_flutter_engine(loop_handle.clone(), state)
         .with_context(|| "Failed to start Flutter engine")?;
 
-    state.backend.x11().flutter = Some(flutter);
+    state.common.flutter = Some(flutter).into();
 
     state
-        .backend
-        .x11()
-        .add_window()
+        .add_x11_window()
         .with_context(|| "Failed to create wl_output")?;
 
     Ok(())

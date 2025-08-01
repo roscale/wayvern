@@ -1,4 +1,7 @@
-use crate::flutter_engine_rs::{Engine, EngineCallbacks};
+use crate::{
+    flutter_engine_rs::{Engine, EngineCallbacks},
+    state::Flutter,
+};
 use anyhow::{Context, Result};
 use smithay::{
     backend::{
@@ -19,10 +22,6 @@ use std::{
 use tracing::error;
 
 use crate::state::State;
-
-pub struct Flutter {
-    pub engine: Engine<UserData>,
-}
 
 pub struct UserData {
     proc_resolver: unsafe fn(&str) -> *const c_void,
@@ -265,10 +264,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
     let timer = Timer::from_duration(Duration::from_millis(7));
     loop_handle
         .insert_source(timer, move |_, _, state| {
-            if let Some(baton) = pending_baton.lock().unwrap().take()
-                && let Some(flutter) = &mut state.backend.x11().flutter
-            {
-                let engine = &mut flutter.engine;
+            if let Some(baton) = pending_baton.lock().unwrap().take() {
+                let engine = &mut state.common.flutter.engine;
                 let now = engine.get_current_time();
 
                 if let Err(err) = engine.on_vsync(baton, now, now + 7000000) {

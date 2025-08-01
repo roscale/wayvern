@@ -11,14 +11,19 @@ use smithay::{
             backend::{ClientData, ClientId, DisconnectReason},
         },
     },
+    utils::{Logical, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         dmabuf::{DmabufGlobal, DmabufState},
-        shell::xdg::{PopupSurface, ToplevelSurface, XdgShellState},
+        shell::xdg::XdgShellState,
     },
 };
 
-use crate::x11::X11State;
+use crate::{
+    flutter_engine_rs::Engine,
+    utils::AutoDerefOption,
+    x11::{UserData, X11State},
+};
 
 pub struct State {
     pub common: Common,
@@ -29,7 +34,9 @@ pub struct Common {
     pub display_handle: DisplayHandle,
     pub should_stop: bool,
     pub event_loop_signal: LoopSignal,
+
     pub flutter_project: PathBuf,
+    pub flutter: AutoDerefOption<Flutter>,
 
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
@@ -38,6 +45,11 @@ pub struct Common {
     pub dmabuf_state: DmabufState,
 
     pub windows: Vec<Window>,
+    pub initial_window_size: Option<Size<i32, Logical>>,
+}
+
+pub struct Flutter {
+    pub engine: Engine<UserData>,
 }
 
 pub enum BackendState {
@@ -90,7 +102,7 @@ impl State {
         let mut seat_state = SeatState::new();
 
         // TODO(roscale): Different seat name for X11 and DRM modes.
-        let mut seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
+        let seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
 
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
@@ -102,12 +114,14 @@ impl State {
                 should_stop: false,
                 event_loop_signal: loop_signal,
                 flutter_project,
+                flutter: None.into(),
                 seat_state,
                 seat,
                 compositor_state,
                 xdg_shell_state,
                 dmabuf_state,
                 windows: Vec::new(),
+                initial_window_size: None,
             },
             backend: BackendState::None,
         }

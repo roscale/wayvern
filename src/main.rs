@@ -19,6 +19,7 @@ use tracing::{error, info, warn};
 mod channel_method_call_handler;
 mod flutter_engine_rs;
 mod state;
+mod utils;
 mod wayland;
 mod x11;
 

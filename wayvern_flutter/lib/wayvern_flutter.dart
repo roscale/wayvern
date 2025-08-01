@@ -1,1 +1,1 @@
-export 'package:wayvern_flutter/src/nested_session.dart' show spawnWindow;
+export 'package:wayvern_flutter/src/window.dart' show setInitialWindowSize;

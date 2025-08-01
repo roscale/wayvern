@@ -7,10 +7,6 @@ import 'package:wayvern_flutter/wayvern_flutter.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  Timer.periodic(const Duration(seconds: 1), (timer) {
-    spawnWindow();
-  });
-
   runWidget(
     ViewCollection(
       views: [
