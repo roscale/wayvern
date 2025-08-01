@@ -148,7 +148,6 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
                     let height = list[1].long_value().unwrap();
 
                     state.common.initial_window_size = Some((width as i32, height as i32).into());
-                    dbg!(&state.common.initial_window_size);
 
                     result.success(None);
                 }
@@ -272,10 +271,10 @@ where
             .build()
             .unwrap();
 
-    let _dmabuf_global = state
-        .common
-        .dmabuf_state
-        .create_global_with_default_feedback::<State>(dh, &default_feedback);
+    // let _dmabuf_global = state
+    //     .common
+    //     .dmabuf_state
+    //     .create_global_with_default_feedback::<State>(dh, &default_feedback);
 
     info!("EGL hardware-acceleration enabled.");
 

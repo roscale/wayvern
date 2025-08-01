@@ -16,6 +16,7 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         dmabuf::{DmabufGlobal, DmabufState},
         shell::xdg::XdgShellState,
+        shm::ShmState,
     },
 };
 
@@ -38,6 +39,7 @@ pub struct Common {
     pub flutter_project: PathBuf,
     pub flutter: AutoDerefOption<Flutter>,
 
+    pub shm_state: ShmState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub compositor_state: CompositorState,
@@ -102,8 +104,10 @@ impl State {
         let mut seat_state = SeatState::new();
 
         // TODO(roscale): Different seat name for X11 and DRM modes.
-        let seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
+        let mut seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
+        seat.add_keyboard(Default::default(), 300, 25).unwrap();
 
+        let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
         let dmabuf_state = DmabufState::new();
@@ -115,6 +119,7 @@ impl State {
                 event_loop_signal: loop_signal,
                 flutter_project,
                 flutter: None.into(),
+                shm_state,
                 seat_state,
                 seat,
                 compositor_state,

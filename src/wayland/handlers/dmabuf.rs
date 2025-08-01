@@ -1,53 +1,53 @@
-use crate::state::State;
-use smithay::{
-    backend::allocator::dmabuf::Dmabuf,
-    delegate_dmabuf,
-    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier},
-};
-
-impl DmabufHandler for State {
-    fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.common.dmabuf_state
-    }
-
-    fn dmabuf_imported(
-        &mut self,
-        global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-        import_notifier: ImportNotifier,
-    ) {
-        match self
-            .backend
-            .dmabuf_imported(import_notifier.client(), global, dmabuf)
-        {
-            Err(err) => {
-                tracing::debug!(?err, "dmabuf import failed");
-                import_notifier.failed()
-            }
-            Ok(Some(_node)) => {
-                // kms backend
-                let Ok(_buffer) = import_notifier.successful::<State>() else {
-                    return;
-                };
-
-                // if let BackendData::Kms(kms_state) = &mut self.backend {
-                //     if let Some(device) = kms_state
-                //         .drm_devices
-                //         .values_mut()
-                //         .find(|dev| dev.render_node == node)
-                //     {
-                //         device.active_buffers.insert(buffer.downgrade());
-                //     }
-                //     if let Err(err) = kms_state.refresh_used_devices() {
-                //         warn!(?err, "Failed to init devices.");
-                //     };
-                // }
-            }
-            Ok(None) => {
-                let _ = import_notifier.successful::<State>();
-            }
-        }
-    }
-}
-
-delegate_dmabuf!(State);
+// use crate::state::State;
+// use smithay::{
+//     backend::allocator::dmabuf::Dmabuf,
+//     delegate_dmabuf,
+//     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier},
+// };
+//
+// impl DmabufHandler for State {
+//     fn dmabuf_state(&mut self) -> &mut DmabufState {
+//         &mut self.common.dmabuf_state
+//     }
+//
+//     fn dmabuf_imported(
+//         &mut self,
+//         global: &DmabufGlobal,
+//         dmabuf: Dmabuf,
+//         import_notifier: ImportNotifier,
+//     ) {
+//         match self
+//             .backend
+//             .dmabuf_imported(import_notifier.client(), global, dmabuf)
+//         {
+//             Err(err) => {
+//                 tracing::debug!(?err, "dmabuf import failed");
+//                 import_notifier.failed()
+//             }
+//             Ok(Some(_node)) => {
+//                 // kms backend
+//                 let Ok(_buffer) = import_notifier.successful::<State>() else {
+//                     return;
+//                 };
+//
+//                 // if let BackendData::Kms(kms_state) = &mut self.backend {
+//                 //     if let Some(device) = kms_state
+//                 //         .drm_devices
+//                 //         .values_mut()
+//                 //         .find(|dev| dev.render_node == node)
+//                 //     {
+//                 //         device.active_buffers.insert(buffer.downgrade());
+//                 //     }
+//                 //     if let Err(err) = kms_state.refresh_used_devices() {
+//                 //         warn!(?err, "Failed to init devices.");
+//                 //     };
+//                 // }
+//             }
+//             Ok(None) => {
+//                 let _ = import_notifier.successful::<State>();
+//             }
+//         }
+//     }
+// }
+//
+// delegate_dmabuf!(State);

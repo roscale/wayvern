@@ -1,11 +1,8 @@
 use smithay::{
-    delegate_compositor,
-    reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
-    utils::Size,
-    wayland::{
+    backend::renderer::utils::on_commit_buffer_handler, delegate_compositor, reexports::wayland_server::{protocol::wl_surface::WlSurface, Client}, utils::Size, wayland::{
         compositor::{CompositorClientState, CompositorHandler, CompositorState},
         seat::WaylandFocus,
-    },
+    }
 };
 
 use crate::state::{ClientState, State};
