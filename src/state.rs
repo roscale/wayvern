@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use smithay::{
     backend::{allocator::dmabuf::Dmabuf, drm::DrmNode, renderer::ImportDma},
+    desktop::Window,
+    input::{Seat, SeatState},
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
@@ -9,7 +11,11 @@ use smithay::{
             backend::{ClientData, ClientId, DisconnectReason},
         },
     },
-    wayland::dmabuf::{DmabufGlobal, DmabufState},
+    wayland::{
+        compositor::{CompositorClientState, CompositorState},
+        dmabuf::{DmabufGlobal, DmabufState},
+        shell::xdg::{PopupSurface, ToplevelSurface, XdgShellState},
+    },
 };
 
 use crate::x11::X11State;
@@ -23,8 +29,15 @@ pub struct Common {
     pub display_handle: DisplayHandle,
     pub should_stop: bool,
     pub event_loop_signal: LoopSignal,
-    pub dmabuf_state: DmabufState,
     pub flutter_project: PathBuf,
+
+    pub seat_state: SeatState<State>,
+    pub seat: Seat<State>,
+    pub compositor_state: CompositorState,
+    pub xdg_shell_state: XdgShellState,
+    pub dmabuf_state: DmabufState,
+
+    pub windows: Vec<Window>,
 }
 
 pub enum BackendState {
@@ -57,6 +70,7 @@ impl BackendState {
 }
 
 pub struct ClientState {
+    pub compositor_client_state: CompositorClientState,
     pub loop_signal: LoopSignal,
 }
 
@@ -73,13 +87,27 @@ impl State {
         loop_signal: LoopSignal,
         flutter_project: PathBuf,
     ) -> Self {
+        let mut seat_state = SeatState::new();
+
+        // TODO(roscale): Different seat name for X11 and DRM modes.
+        let mut seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
+
+        let compositor_state = CompositorState::new::<State>(&display_handle);
+        let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
+        let dmabuf_state = DmabufState::new();
+
         Self {
             common: Common {
                 display_handle,
                 should_stop: false,
                 event_loop_signal: loop_signal,
-                dmabuf_state: DmabufState::new(),
                 flutter_project,
+                seat_state,
+                seat,
+                compositor_state,
+                xdg_shell_state,
+                dmabuf_state,
+                windows: Vec::new(),
             },
             backend: BackendState::None,
         }
@@ -87,6 +115,7 @@ impl State {
 
     pub(crate) fn new_client_state(&self) -> ClientState {
         ClientState {
+            compositor_client_state: Default::default(),
             loop_signal: self.common.event_loop_signal.clone(),
         }
     }
