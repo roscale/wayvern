@@ -7,6 +7,8 @@ import 'package:wayvern_flutter/wayvern_flutter.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await setInitialWindowSize(800, 600);
+
   runWidget(
     ViewCollection(
       views: [

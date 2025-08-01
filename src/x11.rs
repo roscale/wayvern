@@ -1,9 +1,14 @@
+use crate::channel_method_call_handler::ChannelMethodCallHandler;
+use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
+use crate::flutter_engine_rs::platform_channels::method_channel::MethodChannel;
+use crate::flutter_engine_rs::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::state::{BackendState, State};
 use crate::x11::flutter_engine::start_flutter_engine;
 use anyhow::{Context, Result};
 use smithay::backend::allocator::dmabuf::AnyError;
 use smithay::backend::allocator::{Allocator, Slot};
 use smithay::backend::x11::X11Event;
+use smithay::reexports::calloop::channel;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier};
 use smithay::{
     backend::{
@@ -21,12 +26,137 @@ use smithay::{
     utils::DeviceFd,
     wayland::dmabuf::DmabufFeedbackBuilder,
 };
+use std::collections::HashMap;
 use std::os::fd::OwnedFd;
+use std::rc::Rc;
 use tracing::{error, info};
 
 mod flutter_engine;
 
 pub use flutter_engine::UserData;
+
+pub fn init_x11_backend(
+    loop_handle: LoopHandle<State>,
+    display_handle: &DisplayHandle,
+    state: &mut State,
+) -> Result<()> {
+    let backend = X11Backend::new().with_context(|| "Failed to initialize X11 backend")?;
+    let x11_handle = backend.handle();
+
+    loop_handle
+        .insert_source(backend, move |event, _, state| match event {
+            X11Event::CloseRequested { .. } => {
+                state.common.should_stop = true;
+            }
+            X11Event::Resized {
+                new_size: size,
+                window_id,
+            } => {
+                let x11 = state.backend.x11();
+                for surface in x11.surfaces.iter() {
+                    if surface.window.id() == window_id {
+                        if let Err(err) = state.common.flutter.engine.send_view_metrics(
+                            surface.view_id,
+                            size.w as usize,
+                            size.h as usize,
+                        ) {
+                            error!(
+                                "Failed to send metrics to view {}, w: {}, h: {}, {}",
+                                surface.view_id, size.w, size.h, err,
+                            );
+                        }
+
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        })
+        .expect("Failed to insert X11 Backend into event loop");
+
+    // Obtain the DRM node the X server uses for direct rendering.
+    let (drm_node, fd) = x11_handle
+        .drm_node()
+        .with_context(|| "Could not get DRM node used by X server")?;
+
+    let device = EGLDevice::enumerate()
+        .with_context(|| "Failed to enumerate EGL devices")?
+        .find(|device| device.try_get_render_node().ok().flatten() == Some(drm_node))
+        .with_context(|| format!("Failed to find EGLDevice for node {drm_node}"))?;
+
+    // Initialize EGL.
+    let egl_display =
+        unsafe { EGLDisplay::new(device.clone()).with_context(|| "Failed to create EGLDisplay")? };
+
+    // Create the OpenGL context
+    let egl_context =
+        EGLContext::new(&egl_display).with_context(|| "Failed to create EGL context")?;
+
+    let mut renderer = unsafe { GlesRenderer::new(egl_context) }
+        .with_context(|| "Failed to initialize renderer")?;
+
+    init_egl_client_side(display_handle, state, drm_node, &mut renderer)?;
+
+    state.backend = BackendState::X11(Box::new(X11State {
+        x11_handle,
+        allocator: try_gbm_allocator(fd).context("Failed to create allocator for x11")?,
+        egl_display,
+        renderer,
+        surfaces: vec![],
+
+        next_view_id: 0,
+    }));
+
+    let flutter = start_flutter_engine(loop_handle.clone(), state)
+        .with_context(|| "Failed to start Flutter engine")?;
+
+    state.common.flutter = Some(flutter).into();
+
+    register_flutter_channels(loop_handle, state);
+
+    state
+        .add_x11_window()
+        .with_context(|| "Failed to create wl_output")?;
+
+    Ok(())
+}
+
+fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) {
+    let messenger = state.common.flutter.engine.binary_messenger();
+    let mut window_channel = MethodChannel::new(
+        messenger,
+        "wayvern/window".to_string(),
+        Rc::new(StandardMethodCodec::new()),
+    );
+
+    let rx = window_channel.channel_call_handler();
+    loop_handle
+        .insert_source(rx, |event, (), state| {
+            let channel::Event::Msg((method_call, mut result)) = event else {
+                error!("window channel closed");
+                return;
+            };
+
+            match method_call.method() {
+                "setInitialWindowSize" => {
+                    let arguments = method_call.arguments().unwrap();
+                    let EncodableValue::List(list) = arguments else {
+                        panic!();
+                    };
+
+                    let width = list[0].long_value().unwrap();
+                    let height = list[1].long_value().unwrap();
+
+                    state.common.initial_window_size = Some((width as i32, height as i32).into());
+                    dbg!(&state.common.initial_window_size);
+
+                    result.success(None);
+                }
+                _ => result.not_implemented(),
+            }
+        })
+        .unwrap();
+}
 
 pub struct X11State {
     x11_handle: X11Handle,
@@ -126,90 +256,6 @@ pub struct Surface {
     pub view_id: i64,
     pub swapchain: Swapchain<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>>,
     pub slot: Option<Slot<Dmabuf>>,
-}
-
-pub fn init_x11_backend(
-    loop_handle: LoopHandle<State>,
-    display_handle: &DisplayHandle,
-    state: &mut State,
-) -> Result<()> {
-    let backend = X11Backend::new().with_context(|| "Failed to initialize X11 backend")?;
-    let x11_handle = backend.handle();
-
-    loop_handle
-        .insert_source(backend, move |event, _, state| match event {
-            X11Event::CloseRequested { .. } => {
-                state.common.should_stop = true;
-            }
-            X11Event::Resized {
-                new_size: size,
-                window_id,
-            } => {
-                let x11 = state.backend.x11();
-                for surface in x11.surfaces.iter() {
-                    if surface.window.id() == window_id {
-                        if let Err(err) = state.common.flutter.engine.send_view_metrics(
-                            surface.view_id,
-                            size.w as usize,
-                            size.h as usize,
-                        ) {
-                            error!(
-                                "Failed to send metrics to view {}, w: {}, h: {}, {}",
-                                surface.view_id, size.w, size.h, err,
-                            );
-                        }
-
-                        break;
-                    }
-                }
-            }
-            _ => {}
-        })
-        .expect("Failed to insert X11 Backend into event loop");
-
-    // Obtain the DRM node the X server uses for direct rendering.
-    let (drm_node, fd) = x11_handle
-        .drm_node()
-        .with_context(|| "Could not get DRM node used by X server")?;
-
-    let device = EGLDevice::enumerate()
-        .with_context(|| "Failed to enumerate EGL devices")?
-        .find(|device| device.try_get_render_node().ok().flatten() == Some(drm_node))
-        .with_context(|| format!("Failed to find EGLDevice for node {drm_node}"))?;
-
-    // Initialize EGL.
-    let egl_display =
-        unsafe { EGLDisplay::new(device.clone()).with_context(|| "Failed to create EGLDisplay")? };
-
-    // Create the OpenGL context
-    let egl_context =
-        EGLContext::new(&egl_display).with_context(|| "Failed to create EGL context")?;
-
-    let mut renderer = unsafe { GlesRenderer::new(egl_context) }
-        .with_context(|| "Failed to initialize renderer")?;
-
-    init_egl_client_side(display_handle, state, drm_node, &mut renderer)?;
-
-    state.backend = BackendState::X11(Box::new(X11State {
-        x11_handle,
-        allocator: try_gbm_allocator(fd).context("Failed to create allocator for x11")?,
-        egl_display,
-        renderer,
-        surfaces: vec![],
-
-        next_view_id: 0,
-    }));
-
-    let flutter = start_flutter_engine(loop_handle.clone(), state)
-        .with_context(|| "Failed to start Flutter engine")?;
-
-    state.common.flutter = Some(flutter).into();
-
-    state
-        .add_x11_window()
-        .with_context(|| "Failed to create wl_output")?;
-
-    Ok(())
 }
 
 fn init_egl_client_side<R>(
