@@ -9,18 +9,21 @@ use crate::flutter_engine_rs::platform_channels::{
     method_codec::MethodCodec,
 };
 
-pub struct EventChannel<'m, T = EncodableValue> {
-    messenger: &'m mut dyn BinaryMessenger,
+pub struct EventChannel<T = EncodableValue> {
+    // SAFETY: It's a pointer because the BinaryMessageHandler captures the messenger and stores the
+    // closure into the messenger itself, so it's self referential. I assume Flutter's original code is safe,
+    // so I don't want to deal the lifetimes.
+    messenger: *mut dyn BinaryMessenger,
     name: String,
     codec: Rc<dyn MethodCodec<T>>,
 }
 
-impl<'m, T> EventChannel<'m, T>
+impl<T> EventChannel<T>
 where
-    T: Debug,
+    T: Debug + 'static,
 {
     pub fn new(
-        messenger: &'m mut dyn BinaryMessenger,
+        messenger: *mut dyn BinaryMessenger,
         name: String,
         codec: Rc<dyn MethodCodec<T>>,
     ) -> Self {
@@ -31,69 +34,107 @@ where
         }
     }
 
-    fn set_stream_handler(&mut self, handler: Option<Box<dyn StreamHandler<T>>>) {
+    pub fn set_stream_handler(&mut self, handler: Option<Box<dyn StreamHandler<T>>>) {
         let Some(mut handler) = handler else {
-            self.messenger.set_message_handler(&self.name, None);
+            unsafe { (*self.messenger).set_message_handler(&self.name, None) };
             return;
         };
 
+        let messenger = self.messenger;
         let name = self.name.clone();
         let codec = self.codec.clone();
 
-        let binary_handler: BinaryMessageHandler = Some(Box::new(move |message, mut reply| {
-            let mut is_listening = false;
+        let mut is_listening = false;
 
+        let binary_handler: BinaryMessageHandler = Some(Box::new(move |message, mut reply| {
             let method_call = codec.decode_method_call(message);
+            let reply = reply.as_mut().unwrap();
 
             let Some(method_call) = method_call else {
                 eprintln!("Unable to construct method call from message on channel: {name}");
-                reply.as_mut().unwrap()(None);
+                reply(None);
                 return;
             };
 
-            if method_call.method() == "listen" {
-                if is_listening {
-                    let error = handler.on_cancel(None);
+            match method_call.method() {
+                "listen" => {
+                    if is_listening {
+                        let error = handler.on_cancel(None);
 
-                    if let Some(error) = error {
-                        eprintln!(
-                            "Failed to cancel existing stream: {}, {}, {:?}",
-                            error.code, error.message, error.details,
-                        )
+                        if let Some(error) = error {
+                            eprintln!(
+                                "Failed to cancel existing stream: {}, {}, {:?}",
+                                error.code, error.message, error.details,
+                            )
+                        }
                     }
+
+                    is_listening = true;
+
+                    let sink: Box<dyn EventSink<T>> = Box::new(EventSinkImplementation::new(
+                        // SAFETY: This is where the messenger is captured.
+                        messenger,
+                        name.clone(),
+                        codec.clone(),
+                    ));
+
+                    let error = handler.on_listen(method_call.arguments(), sink);
+
+                    let result = match error {
+                        Some(error) => codec.encode_error_envelope(
+                            &error.code,
+                            &error.message,
+                            error.details.as_ref(),
+                        ),
+                        None => codec.encode_success_envelope(None),
+                    };
+
+                    reply(Some(result));
                 }
 
-                is_listening = true;
+                "cancel" => {
+                    let result = if is_listening {
+                        let error = handler.on_cancel(method_call.arguments());
 
-                let sink: Box<dyn EventSink<T>> = Box::new(EventSinkImplementation::new(
-                    // TODO(roscale): Make messenger Rc.
-                    self.messenger,
-                    name.clone(),
-                    codec.clone(),
-                ));
+                        let result = match error {
+                            Some(error) => codec.encode_error_envelope(
+                                &error.code,
+                                &error.message,
+                                error.details.as_ref(),
+                            ),
+                            None => codec.encode_success_envelope(None),
+                        };
 
-                let arguments = method_call.arguments();
+                        is_listening = false;
 
-                let error = handler.on_listen(arguments, sink);
+                        result
+                    } else {
+                        codec.encode_error_envelope("error", "No active stream to cancel", None)
+                    };
 
-                // TODO(roscale): continue: https://github.com/flutter/flutter/blob/09f4c9c71d3725c66bc223931bbb1fade33b194d/engine/src/flutter/shell/platform/common/client_wrapper/include/flutter/event_channel.h#L106
+                    reply(Some(result));
+                }
+
+                _ => {
+                    reply(None);
+                }
             }
         }));
 
-        self.messenger
-            .set_message_handler(&self.name, binary_handler);
+        // SAFETY: This is where the messenger inside the binary_handler is stored in the messenger itself.
+        unsafe { (*self.messenger).set_message_handler(&self.name, binary_handler) };
     }
 }
 
-struct EventSinkImplementation<'m, T = EncodableValue> {
-    messenger: &'m mut dyn BinaryMessenger,
+struct EventSinkImplementation<T = EncodableValue> {
+    messenger: *mut dyn BinaryMessenger,
     name: String,
     codec: Rc<dyn MethodCodec<T>>,
 }
 
-impl<'m, T: 'static> EventSinkImplementation<'m, T> {
+impl<T: 'static> EventSinkImplementation<T> {
     pub fn new(
-        messenger: &'m mut dyn BinaryMessenger,
+        messenger: *mut dyn BinaryMessenger,
         name: String,
         codec: Rc<dyn MethodCodec<T>>,
     ) -> Self {
@@ -105,20 +146,20 @@ impl<'m, T: 'static> EventSinkImplementation<'m, T> {
     }
 }
 
-impl<'m, T> EventSink<T> for EventSinkImplementation<'m, T> {
+impl<T> EventSink<T> for EventSinkImplementation<T> {
     fn success_internal(&mut self, result: Option<T>) {
         let result = self.codec.encode_success_envelope(result.as_ref());
-        self.messenger.send(&self.name, &result, None);
+        unsafe { (*self.messenger).send(&self.name, &result, None) };
     }
 
     fn error_internal(&mut self, code: String, message: String, details: Option<T>) {
         let result = self
             .codec
             .encode_error_envelope(&code, &message, details.as_ref());
-        self.messenger.send(&self.name, &result, None);
+        unsafe { (*self.messenger).send(&self.name, &result, None) };
     }
 
     fn end_of_stream_internal(&mut self) {
-        self.messenger.send(&self.name, &[], None);
+        unsafe { (*self.messenger).send(&self.name, &[], None) };
     }
 }

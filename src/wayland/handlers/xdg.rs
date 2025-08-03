@@ -28,11 +28,8 @@ impl XdgShellHandler for State {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window_id = {
-            let id = self.common.next_window_id;
-            self.common.next_window_id += 1;
-            id
-        };
+        let window_id = self.common.next_window_id;
+        self.common.next_window_id += 1;
 
         with_states(surface.wl_surface(), |states| {
             states
@@ -51,7 +48,7 @@ impl XdgShellHandler for State {
         );
 
         channel.invoke_method(
-            "window_created",
+            "windowCreated",
             Some(Box::new(EncodableValue::Int64(window_id as i64))),
             None,
         );
@@ -73,7 +70,7 @@ impl XdgShellHandler for State {
         );
 
         channel.invoke_method(
-            "window_destroyed",
+            "windowDestroyed",
             Some(Box::new(EncodableValue::Int64(window_id as i64))),
             None,
         );

@@ -2,12 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:wayvern_flutter/wayvern_flutter.dart';
+import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await setInitialWindowSize(800, 600);
+  await wayvern.setInitialWindowSize(800, 600);
+
+  wayvern.init();
+
+  wayvern.windowCreated.listen((id) => print("Window $id created"));
+  wayvern.windowDestroyed.listen((id) => print("Window $id destroyed"));
 
   runWidget(
     ViewCollection(
