@@ -1,7 +1,10 @@
 import 'package:flutter/services.dart';
 
-const platform = MethodChannel('wayvern/window');
+const windowChannel = MethodChannel('wayvern/window');
+
+const StreamController<int>
 
 Future<void> setInitialWindowSize(int width, int height) async {
-  await platform.invokeMethod("setInitialWindowSize", [width, height]);
+  await windowChannel.invokeMethod("setInitialWindowSize", [width, height]);
 }
+

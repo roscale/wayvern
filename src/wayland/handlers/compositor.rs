@@ -1,8 +1,14 @@
+use std::sync::Mutex;
+
 use smithay::{
-    backend::renderer::utils::on_commit_buffer_handler, delegate_compositor, reexports::wayland_server::{protocol::wl_surface::WlSurface, Client}, utils::Size, wayland::{
-        compositor::{CompositorClientState, CompositorHandler, CompositorState},
+    backend::renderer::utils::on_commit_buffer_handler,
+    delegate_compositor,
+    reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
+    utils::Size,
+    wayland::{
+        compositor::{CompositorClientState, CompositorHandler, CompositorState, with_states},
         seat::WaylandFocus,
-    }
+    },
 };
 
 use crate::state::{ClientState, State};

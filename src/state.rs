@@ -46,6 +46,7 @@ pub struct Common {
     pub xdg_shell_state: XdgShellState,
     pub dmabuf_state: DmabufState,
 
+    pub next_window_id: usize,
     pub windows: Vec<Window>,
     pub initial_window_size: Option<Size<i32, Logical>>,
 }
@@ -125,6 +126,7 @@ impl State {
                 compositor_state,
                 xdg_shell_state,
                 dmabuf_state,
+                next_window_id: 0,
                 windows: Vec::new(),
                 initial_window_size: None,
             },
