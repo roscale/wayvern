@@ -38,13 +38,14 @@ impl<UserData> Engine<UserData> {
         user_data: UserData,
     ) -> Result<Self> {
         let EngineCallbacks {
-            proc_resolver: proc_resolver_callback,
-            make_current: make_current_callback,
-            clear_current: clear_current_callback,
-            make_resource_current: make_resource_current_callback,
-            request_texture: request_texture_callback,
-            vsync: vsync_callback,
-            present: present_callback,
+            proc_resolver,
+            external_texture_frame,
+            make_current,
+            clear_current,
+            make_resource_current,
+            request_texture,
+            vsync,
+            present,
         } = callbacks;
 
         let bundle_path = get_bundle_path(flutter_project, aot_mode);
@@ -80,13 +81,14 @@ impl<UserData> Engine<UserData> {
         let binary_messenger = BinaryMessengerImpl::new((*platform_task_runner.poster).clone());
 
         let mut engine_user_data = Box::new(user_data::EngineUserData {
-            proc_resolver_callback,
-            vsync_callback,
-            make_current_callback,
-            clear_current_callback,
-            make_resource_current_callback,
-            present_callback,
-            request_texture_callback,
+            proc_resolver,
+            external_texture_frame,
+            vsync,
+            make_current,
+            clear_current,
+            make_resource_current,
+            present,
+            request_texture,
             binary_messenger,
             user_data,
         });
@@ -111,7 +113,9 @@ impl<UserData> Engine<UserData> {
                             fbo_reset_after_present: true,
                             surface_transformation: None,
                             gl_proc_resolver: Some(ffi::gl_proc_resolver_callback::<UserData>),
-                            gl_external_texture_frame_callback: None,
+                            gl_external_texture_frame_callback: Some(
+                                ffi::gl_external_texture_frame_callback::<UserData>,
+                            ),
                             fbo_with_frame_info_callback: None,
                             present_with_info: None,
                             populate_existing_damage: None,
@@ -330,7 +334,7 @@ impl<UserData> Engine<UserData> {
         &mut self.engine_user_data.binary_messenger
     }
 
-    pub fn _register_external_texture(&self, texture_id: i64) -> Result<()> {
+    pub fn register_external_texture(&self, texture_id: i64) -> Result<()> {
         let result = unsafe { FlutterEngineRegisterExternalTexture(*self.handle, texture_id) };
 
         ensure!(
@@ -352,7 +356,7 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn _mark_external_texture_frame_available(&self, texture_id: i64) -> Result<()> {
+    pub fn mark_external_texture_frame_available(&self, texture_id: i64) -> Result<()> {
         let result =
             unsafe { FlutterEngineMarkExternalTextureFrameAvailable(*self.handle, texture_id) };
 

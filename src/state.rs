@@ -1,20 +1,21 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use smithay::{
-    backend::{allocator::dmabuf::Dmabuf, drm::DrmNode, renderer::ImportDma},
     desktop::Window,
     input::{Seat, SeatState},
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            Client, DisplayHandle,
+            DisplayHandle,
             backend::{ClientData, ClientId, DisconnectReason},
+            protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Logical, Size},
+    utils::{Clock, Logical, Monotonic, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
-        dmabuf::{DmabufGlobal, DmabufState},
+        dmabuf::DmabufState,
         shell::xdg::XdgShellState,
         shm::ShmState,
     },
@@ -39,6 +40,9 @@ pub struct Common {
     pub flutter_project: PathBuf,
     pub flutter: AutoDerefOption<Flutter>,
 
+    pub clock: Clock<Monotonic>,
+
+    pub output: Output,
     pub shm_state: ShmState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
@@ -48,6 +52,7 @@ pub struct Common {
 
     pub next_window_id: usize,
     pub windows: Vec<Window>,
+    pub surfaces_by_texture_id: HashMap<i64, WlSurface>,
     pub initial_window_size: Option<Size<i32, Logical>>,
 }
 
@@ -68,20 +73,20 @@ impl BackendState {
         }
     }
 
-    pub fn dmabuf_imported(
-        &mut self,
-        _client: Option<Client>,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<Option<DrmNode>, anyhow::Error> {
-        match self {
-            BackendState::X11(state) => {
-                state.renderer.import_dmabuf(&dmabuf, None)?;
-            }
-            _ => unreachable!("No backend set when importing dmabuf"),
-        };
-        Ok(None)
-    }
+    // pub fn dmabuf_imported(
+    //     &mut self,
+    //     _client: Option<Client>,
+    //     _global: &DmabufGlobal,
+    //     dmabuf: Dmabuf,
+    // ) -> Result<Option<DrmNode>, anyhow::Error> {
+    //     match self {
+    //         BackendState::X11(state) => {
+    //             state.renderer.import_dmabuf(&dmabuf, None)?;
+    //         }
+    //         _ => unreachable!("No backend set when importing dmabuf"),
+    //     };
+    //     Ok(None)
+    // }
 }
 
 pub struct ClientState {
@@ -108,6 +113,25 @@ impl State {
         let mut seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
         seat.add_keyboard(Default::default(), 300, 25).unwrap();
 
+        let output = Output::new(
+            "TODO output name".to_string(),
+            PhysicalProperties {
+                size: (800, 600).into(),
+                subpixel: Subpixel::Unknown,
+                make: "TODO make".to_string(),
+                model: "TODO model".to_string(),
+            },
+        );
+
+        let mode = Mode {
+            size: (800, 600).into(),
+            refresh: 144,
+        };
+        output.set_preferred(mode);
+        output.change_current_state(Some(mode), None, None, None);
+
+        output.create_global::<State>(&display_handle);
+
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let compositor_state = CompositorState::new::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
@@ -120,6 +144,8 @@ impl State {
                 event_loop_signal: loop_signal,
                 flutter_project,
                 flutter: None.into(),
+                output,
+                clock: Clock::new(),
                 shm_state,
                 seat_state,
                 seat,
@@ -128,6 +154,7 @@ impl State {
                 dmabuf_state,
                 next_window_id: 0,
                 windows: Vec::new(),
+                surfaces_by_texture_id: HashMap::new(),
                 initial_window_size: None,
             },
             backend: BackendState::None,

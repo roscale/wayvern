@@ -1,12 +1,13 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use smithay::{
+    backend::renderer::gles::GlesTexture,
     delegate_xdg_shell,
     desktop::Window,
     reexports::wayland_server::protocol::wl_seat::WlSeat,
     utils::Serial,
     wayland::{
-        compositor::{self, SurfaceAttributes, with_states},
+        compositor::with_states,
         seat::WaylandFocus,
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -16,7 +17,7 @@ use smithay::{
 
 use crate::{
     flutter_engine_rs::platform_channels::{
-        encodable_value::EncodableValue, method_call::MethodCall, method_channel::MethodChannel,
+        encodable_value::EncodableValue, method_channel::MethodChannel,
         standard_method_codec::StandardMethodCodec,
     },
     state::State,
@@ -32,9 +33,12 @@ impl XdgShellHandler for State {
         self.common.next_window_id += 1;
 
         with_states(surface.wl_surface(), |states| {
-            states
-                .data_map
-                .insert_if_missing(|| MyWindowData { window_id });
+            states.data_map.insert_if_missing(|| {
+                RefCell::new(MyWindowData {
+                    window_id,
+                    textures: Vec::new(),
+                })
+            });
         });
 
         self.common
@@ -56,7 +60,12 @@ impl XdgShellHandler for State {
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         let window_id = with_states(surface.wl_surface(), |states| {
-            states.data_map.get::<MyWindowData>().unwrap().window_id
+            states
+                .data_map
+                .get::<RefCell<MyWindowData>>()
+                .unwrap()
+                .borrow_mut()
+                .window_id
         });
 
         self.common
@@ -76,24 +85,25 @@ impl XdgShellHandler for State {
         );
     }
 
-    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {}
+    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
 
-    fn grab(&mut self, surface: PopupSurface, seat: WlSeat, serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         todo!()
     }
 
     fn reposition_request(
         &mut self,
-        surface: PopupSurface,
-        positioner: PositionerState,
-        token: u32,
+        _surface: PopupSurface,
+        _positioner: PositionerState,
+        _token: u32,
     ) {
         todo!()
     }
 }
 
-struct MyWindowData {
+pub struct MyWindowData {
     pub window_id: usize,
+    pub textures: Vec<GlesTexture>,
 }
 
 delegate_xdg_shell!(State);

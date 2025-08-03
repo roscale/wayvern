@@ -1,20 +1,24 @@
 use crate::{
     flutter_engine_rs::{Engine, EngineCallbacks},
     state::Flutter,
+    wayland::handlers::xdg::MyWindowData,
 };
 use anyhow::{Context, Result};
 use smithay::{
     backend::{
         egl::{EGLContext, get_proc_address},
-        renderer::{Bind, ImportDma, Renderer, Texture},
+        renderer::{Bind, ImportAll, ImportDma, Renderer, Texture, buffer_type},
     },
+    desktop::utils::surface_primary_scanout_output,
     reexports::calloop::{
         self, LoopHandle, channel,
         timer::{TimeoutAction, Timer},
     },
     utils::{Rectangle, Transform},
+    wayland::compositor::{BufferAssignment, SurfaceAttributes, with_states},
 };
 use std::{
+    cell::RefCell,
     ffi::c_void,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
@@ -28,7 +32,8 @@ pub struct UserData {
     gl_finish: unsafe extern "system" fn(),
     flutter_main_context: EGLContext,
     flutter_resource_context: EGLContext,
-    tx_request_texture: calloop::channel::Sender<(i64, u32, u32, mpsc::Sender<u32>)>,
+    tx_request_texture: calloop::channel::Sender<(i64, u32, u32, mpsc::Sender<Option<u32>>)>,
+    tx_external_texture: calloop::channel::Sender<(i64, mpsc::Sender<Option<u32>>)>,
     tx_present: calloop::channel::Sender<i64>,
 }
 
@@ -47,7 +52,10 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
     let pending_baton = Arc::new(Mutex::new(None));
 
     let (tx_request_texture, rx_request_texture) =
-        calloop::channel::channel::<(i64, u32, u32, mpsc::Sender<u32>)>();
+        calloop::channel::channel::<(i64, u32, u32, mpsc::Sender<Option<u32>>)>();
+
+    let (tx_external_texture, rx_external_texture) =
+        calloop::channel::channel::<(i64, mpsc::Sender<Option<u32>>)>();
 
     let (tx_present, rx_present) = calloop::channel::channel::<i64>();
 
@@ -56,6 +64,20 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
         !cfg!(debug_assertions),
         EngineCallbacks {
             proc_resolver: Box::new(|name, user_data| unsafe { (user_data.proc_resolver)(name) }),
+            external_texture_frame: Box::new(|texture_id, user_data| {
+                let (tx_texture, rx_texture) = mpsc::channel();
+
+                if let Err(err) = user_data.tx_external_texture.send((texture_id, tx_texture)) {
+                    error!("Could not request texture name for texture_id {texture_id}, {err}");
+                    return None;
+                }
+
+                rx_texture
+                    .recv()
+                    .inspect_err(|err| error!("Could not receive texture name, {err}"))
+                    .ok()
+                    .flatten()
+            }),
             make_current: Box::new(|user_data| unsafe {
                 user_data.flutter_main_context.make_current().is_ok()
             }),
@@ -71,14 +93,14 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                     .send((view_id, w, h, tx_texture))
                 {
                     error!("Could not request texture for view {view_id}, {err}");
-                    return 0;
+                    return None;
                 }
 
                 match rx_texture.recv() {
                     Ok(texture) => texture,
                     Err(err) => {
                         error!("Could not receive texture name, {err}");
-                        0
+                        None
                     }
                 }
             }),
@@ -96,6 +118,7 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
         },
         UserData {
             proc_resolver: get_proc_address,
+            tx_external_texture,
             gl_finish: unsafe {
                 let gl_finish = get_proc_address("glFinish");
                 std::mem::transmute::<*const std::ffi::c_void, unsafe extern "system" fn()>(
@@ -122,8 +145,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
             let Some(surface) = x11.surfaces.iter_mut().find(|s| s.view_id == view_id) else {
                 error!("No X11 surface found with view id {view_id}");
 
-                if let Err(err) = tx_texture.send(0) {
-                    error!("Failed to send texture id 0 to tx_texture, {err}");
+                if let Err(err) = tx_texture.send(None) {
+                    error!("Failed to send texture id None to tx_texture, {err}");
                     return;
                 }
 
@@ -137,8 +160,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 Ok(None) => {
                     error!("No swapchain slots available");
 
-                    if let Err(err) = tx_texture.send(0) {
-                        error!("Failed to send texture id 0 to tx_texture, {err}");
+                    if let Err(err) = tx_texture.send(None) {
+                        error!("Failed to send texture id None to tx_texture, {err}");
                         return;
                     }
 
@@ -147,8 +170,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 Err(err) => {
                     error!("{err:?}");
 
-                    if let Err(err) = tx_texture.send(0) {
-                        error!("Failed to send texture id 0 to tx_texture, {err}");
+                    if let Err(err) = tx_texture.send(None) {
+                        error!("Failed to send texture id None to tx_texture, {err}");
                         return;
                     }
 
@@ -159,10 +182,10 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
             let gl_texture = match x11.renderer.import_dmabuf(&slot, None) {
                 Ok(gl_texture) => gl_texture,
                 Err(err) => {
-                    error!("{err:?}");
+                    error!("Can't import dmabuf: {err:?}");
 
-                    if let Err(err) = tx_texture.send(0) {
-                        error!("Failed to send texture id 0 to tx_texture, {err}");
+                    if let Err(err) = tx_texture.send(None) {
+                        error!("Failed to send texture id None to tx_texture, {err}");
                         return;
                     }
 
@@ -171,7 +194,7 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
             };
 
             let id = gl_texture.tex_id();
-            if let Err(err) = tx_texture.send(id) {
+            if let Err(err) = tx_texture.send(Some(id)) {
                 error!("Failed to send texture id {id} to tx_texture, {err}");
                 return;
             }
@@ -258,6 +281,93 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 error!("Failed to submit X11 buffer: {err}");
                 surface.x11_surface.reset_buffers();
             }
+
+            for window in &state.common.windows {
+                window.send_frame(
+                    &state.common.output,
+                    state.common.clock.now(),
+                    None,
+                    surface_primary_scanout_output,
+                );
+            }
+        })
+        .unwrap();
+
+    loop_handle
+        .insert_source(rx_external_texture, move |event, _, state| {
+            let channel::Event::Msg((texture_id, texture_name)) = event else {
+                error!("tx_external_texture channel closed");
+                return;
+            };
+
+            let Some(surface) = state.common.surfaces_by_texture_id.get(&texture_id) else {
+                error!("Failed to find surface by texture id {texture_id}");
+
+                if let Err(err) = texture_name.send(None) {
+                    error!("Failed to send texture name None: {err}");
+                    return;
+                }
+
+                return;
+            };
+
+            with_states(surface, |data| {
+                let mut guard = data.cached_state.get::<SurfaceAttributes>();
+                let attributes = guard.current();
+
+                if let Some(BufferAssignment::NewBuffer(buffer)) = &attributes.buffer {
+                    let texture = state
+                        .backend
+                        .x11()
+                        .renderer
+                        .import_buffer(buffer, None, &[]);
+
+                    buffer.release();
+
+                    let Some(texture) = texture else {
+                        error!("Can't import buffer type {:?}", buffer_type(buffer));
+
+                        if let Err(err) = texture_name.send(None) {
+                            error!("Failed to send texture name None: {err}");
+                            return;
+                        }
+
+                        return;
+                    };
+
+                    let texture = match texture {
+                        Ok(texture) => texture,
+                        Err(err) => {
+                            error!("Can't import buffer: {err:?}");
+
+                            if let Err(err) = texture_name.send(None) {
+                                error!("Failed to send texture name None: {err}");
+                                return;
+                            }
+
+                            return;
+                        }
+                    };
+
+                    if let Err(err) = texture_name.send(Some(texture.tex_id())) {
+                        error!("Failed to send texture name {}: {err}", texture.tex_id());
+                        return;
+                    }
+
+                    data.data_map
+                        .get::<RefCell<MyWindowData>>()
+                        .unwrap()
+                        .borrow_mut()
+                        .textures
+                        .push(texture);
+                } else {
+                    error!("No buffer attached to surface");
+
+                    if let Err(err) = texture_name.send(None) {
+                        error!("Failed to send texture name None: {err}");
+                    }
+                }
+            });
         })
         .unwrap();
 

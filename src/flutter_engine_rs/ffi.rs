@@ -11,6 +11,10 @@ use crate::flutter_engine_rs::user_data::EngineUserData;
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
 
+// I don't want to import the OpenGL header just for few macros.
+const GL_TEXTURE_2D: u32 = 0x0DE1;
+const GL_RGBA8: u32 = 0x8058;
+
 pub unsafe extern "C" fn runs_task_on_current_thread_callback(user_data: *mut c_void) -> bool {
     let task_poster: &mut TaskPoster = unsafe { &mut *(user_data as *mut TaskPoster) };
 
@@ -37,28 +41,53 @@ pub unsafe extern "C" fn gl_proc_resolver_callback<UserData>(
     let c_str = unsafe { CStr::from_ptr(name) };
     let name = c_str.to_str().unwrap();
 
-    (user_data.proc_resolver_callback)(name, &mut user_data.user_data) as *mut c_void
+    (user_data.proc_resolver)(name, &mut user_data.user_data) as *mut c_void
+}
+
+pub unsafe extern "C" fn gl_external_texture_frame_callback<UserData>(
+    user_data: *mut c_void,
+    texture_id: i64,
+    _width: usize,
+    _height: usize,
+    texture_out: *mut FlutterOpenGLTexture,
+) -> bool {
+    let user_data: &mut EngineUserData<UserData> =
+        unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
+
+    let texture_out = unsafe { &mut *texture_out };
+
+    let texture_name = (user_data.external_texture_frame)(texture_id, &mut user_data.user_data);
+
+    if let Some(texture_name) = texture_name {
+        texture_out.target = GL_TEXTURE_2D;
+        texture_out.name = texture_name;
+        texture_out.format = GL_RGBA8;
+
+        true
+    } else {
+        false
+    }
 }
 
 pub unsafe extern "C" fn vsync_callback<UserData>(user_data: *mut c_void, baton: isize) {
     let user_data: &mut EngineUserData<UserData> =
         unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.vsync_callback)(baton, &mut user_data.user_data);
+    (user_data.vsync)(baton, &mut user_data.user_data);
 }
 
 pub unsafe extern "C" fn make_current_callback<UserData>(user_data: *mut c_void) -> bool {
     let user_data: &mut EngineUserData<UserData> =
         unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.make_current_callback)(&mut user_data.user_data)
+    (user_data.make_current)(&mut user_data.user_data)
 }
 
 pub unsafe extern "C" fn clear_current_callback<UserData>(user_data: *mut c_void) -> bool {
     let user_data: &mut EngineUserData<UserData> =
         unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.clear_current_callback)(&mut user_data.user_data)
+    (user_data.clear_current)(&mut user_data.user_data)
 }
 
 pub unsafe extern "C" fn present(_user_data: *mut c_void) -> bool {
@@ -73,7 +102,7 @@ pub unsafe extern "C" fn make_resource_current_callback<UserData>(user_data: *mu
     let user_data: &mut EngineUserData<UserData> =
         unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.make_resource_current_callback)(&mut user_data.user_data)
+    (user_data.make_resource_current)(&mut user_data.user_data)
 }
 
 pub unsafe extern "C" fn platform_message_callback<UserData>(
@@ -96,12 +125,13 @@ pub unsafe extern "C" fn create_backing_store_callback<UserData>(
     let user_data = unsafe { &mut *(user_data as *mut EngineUserData<UserData>) };
     let backing_store_config = unsafe { &*backing_store_config };
 
-    let name = (user_data.request_texture_callback)(
+    let name = (user_data.request_texture)(
         backing_store_config.view_id,
         backing_store_config.size.width as u32,
         backing_store_config.size.height as u32,
         &mut user_data.user_data,
-    );
+    )
+    .unwrap_or(0);
 
     let backing_store = FlutterBackingStore {
         struct_size: std::mem::size_of::<FlutterBackingStore>(),
@@ -113,10 +143,9 @@ pub unsafe extern "C" fn create_backing_store_callback<UserData>(
                 type_: FlutterOpenGLTargetType_kFlutterOpenGLTargetTypeTexture,
                 __bindgen_anon_1: FlutterOpenGLBackingStore__bindgen_ty_1 {
                     texture: FlutterOpenGLTexture {
-                        // I don't want to import the OpenGL header just for a single macro.
-                        target: 0x0DE1, // GL_TEXTURE_2D
+                        target: GL_TEXTURE_2D,
                         name,
-                        format: 0x8058, // GL_RGBA8
+                        format: GL_RGBA8,
                         user_data: null_mut(),
                         destruction_callback: None,
                         width: 0,
@@ -147,7 +176,7 @@ pub unsafe extern "C" fn present_view_callback<UserData>(
     let present_view_info = unsafe { &*present_view_info };
     let user_data = unsafe { &mut *(present_view_info.user_data as *mut EngineUserData<UserData>) };
 
-    (user_data.present_callback)(present_view_info.view_id, &mut user_data.user_data);
+    (user_data.present)(present_view_info.view_id, &mut user_data.user_data);
 
     true
 }

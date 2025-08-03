@@ -78,6 +78,7 @@ class _MyHomePageState extends State<MyHomePage> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             CircularProgressIndicator(),
+            SizedBox(width: 800, height: 600, child: Texture(textureId: 1234)),
           ],
         ),
       ),

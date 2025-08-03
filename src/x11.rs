@@ -1,11 +1,14 @@
-use crate::channel_method_call_handler::ChannelMethodCallHandler;
-use crate::flutter_engine_rs::platform_channels::encodable_value::EncodableValue;
 use crate::flutter_engine_rs::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine_rs::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::state::{BackendState, State};
 use crate::x11::flutter_engine::start_flutter_engine;
+use crate::{
+    channel_method_call_handler::ChannelMethodCallHandler,
+    flutter_engine_rs::platform_channels::encodable_value::EncodableValue,
+};
 use anyhow::{Context, Result};
 use smithay::backend::allocator::dmabuf::AnyError;
+use smithay::backend::allocator::gbm::GbmBufferFlags;
 use smithay::backend::allocator::{Allocator, Slot};
 use smithay::backend::x11::X11Event;
 use smithay::reexports::calloop::channel;
@@ -15,7 +18,7 @@ use smithay::{
         allocator::{
             Swapchain,
             dmabuf::{Dmabuf, DmabufAllocator},
-            gbm::{GbmAllocator, GbmBufferFlags},
+            gbm::GbmAllocator,
         },
         drm::{DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
@@ -24,12 +27,10 @@ use smithay::{
     },
     reexports::{calloop::LoopHandle, gbm::Device as GbmDevice, wayland_server::DisplayHandle},
     utils::DeviceFd,
-    wayland::dmabuf::DmabufFeedbackBuilder,
 };
-use std::collections::HashMap;
 use std::os::fd::OwnedFd;
 use std::rc::Rc;
-use tracing::{error, info};
+use tracing::error;
 
 mod flutter_engine;
 
@@ -258,26 +259,26 @@ pub struct Surface {
 }
 
 fn init_egl_client_side<R>(
-    dh: &DisplayHandle,
-    state: &mut State,
-    render_node: DrmNode,
-    renderer: &mut R,
+    _dh: &DisplayHandle,
+    _state: &mut State,
+    _render_node: DrmNode,
+    _renderer: &mut R,
 ) -> Result<()>
 where
     R: ImportDma,
 {
-    let default_feedback =
-        DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats())
-            .build()
-            .unwrap();
-
+    // let default_feedback =
+    //     DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats())
+    //         .build()
+    //         .unwrap();
+    //
     // let _dmabuf_global = state
     //     .common
     //     .dmabuf_state
     //     .create_global_with_default_feedback::<State>(dh, &default_feedback);
-
-    info!("EGL hardware-acceleration enabled.");
-
+    //
+    // info!("EGL hardware-acceleration enabled.");
+    //
     Ok(())
 }
 
