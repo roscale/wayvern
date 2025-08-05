@@ -7,7 +7,7 @@ import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await wayvern.setInitialWindowSize(800, 600);
+  // await wayvern.setInitialWindowSize(800, 600);
 
   wayvern.init();
 
@@ -44,9 +44,9 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
   final String title;
+
+  const MyHomePage({super.key, required this.title});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -54,12 +54,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,31 +72,26 @@ class _MyHomePageState extends State<MyHomePage> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             CircularProgressIndicator(),
+            Padding(padding: EdgeInsetsGeometry.only(top: 50)),
 
             ListenableBuilder(
               listenable: wayvern.windows,
-              builder: (context, child) {
-                if (wayvern.windows.map.isEmpty) {
-                  return SizedBox();
-                }
-
-                final window = wayvern.windows.map.values.first;
-
-                return ListenableBuilder(
-                  listenable: window,
-                  builder: (context, child) {
-                    final textureId = window.textureId;
-
-                    if (textureId == null) {
-                      return SizedBox();
-                    }
-
-                    return SizedBox(
-                      width: 800,
-                      height: 600,
-                      child: Texture(textureId: textureId),
-                    );
-                  },
+              builder: (_, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children:
+                      wayvern.windows.list.map((window) {
+                        return ListenableBuilder(
+                          listenable: window,
+                          builder: (_, _) {
+                            return SizedBox(
+                              width: window.width.toDouble(),
+                              height: window.height.toDouble(),
+                              child: Texture(textureId: window.textureId),
+                            );
+                          },
+                        );
+                      }).toList(),
                 );
               },
             ),
@@ -115,5 +104,11 @@ class _MyHomePageState extends State<MyHomePage> {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  void _incrementCounter() {
+    setState(() {
+      _counter++;
+    });
   }
 }

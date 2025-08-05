@@ -120,7 +120,7 @@ impl CompositorHandler for State {
 
             self.common
                 .current_texture_by_surface_id
-                .insert(surface_id, (texture_id, texture));
+                .insert(surface_id, (texture_id, texture.clone()));
 
             if is_new {
                 self.common
@@ -144,6 +144,8 @@ impl CompositorHandler for State {
                 Some(Box::new(EncodableValue::Int64List(Vec::from([
                     surface_id as i64,
                     texture_id,
+                    texture.width() as i64,
+                    texture.height() as i64,
                 ])))),
                 None,
             );

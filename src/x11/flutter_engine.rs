@@ -308,11 +308,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 .get(&texture_id)
                 .map(|texture| texture.tex_id());
 
-            println!("texture_id {} -> name {:?}", texture_id, texture);
-
             if let Err(err) = texture_name.send(texture) {
                 error!("Failed to send texture name: {err}");
-                return;
             }
         })
         .unwrap();

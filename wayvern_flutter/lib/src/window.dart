@@ -17,31 +17,40 @@ final windows = Windows();
 
 class Windows with ChangeNotifier {
   final Map<int, Window> map = {};
-  final order = [];
+  final List<Window> list = [];
 
   void add(int id) {
-    map[id] = Window(id);
-    order.add(id);
+    final window = Window(id);
+    map[id] = window;
+    list.add(window);
     notifyListeners();
   }
 
   void remove(int id) {
     map.remove(id);
-    order.remove(id);
+    list.removeWhere((window) => window.id == id);
     notifyListeners();
   }
 }
 
 class Window with ChangeNotifier {
   final int id;
-  int? _textureId;
+
+  int _textureId = 0;
+  int _width = 0;
+  int _height = 0;
 
   Window(this.id);
 
-  int? get textureId => _textureId;
+  int get textureId => _textureId;
+  int get width => _width;
+  int get height => _height;
 
-  set textureId(int? textureId) {
+  void attachTexture(int textureId, int width, int height) {
     _textureId = textureId;
+    _width = width;
+    _height = height;
+
     notifyListeners();
   }
 }
@@ -63,8 +72,8 @@ void initWindowStreams() {
 
       final surfaceId = args[0];
       final textureId = args[1];
-
-      textureAttachedController.sink.add((surfaceId, textureId));
+      final width = args[2];
+      final height = args[3];
 
       final window = windows.map[surfaceId];
       if (window == null) {
@@ -74,7 +83,8 @@ void initWindowStreams() {
         return;
       }
 
-      window.textureId = textureId;
+      textureAttachedController.sink.add((surfaceId, textureId));
+      window.attachTexture(textureId, width, height);
     }
   });
 }

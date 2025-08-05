@@ -11,7 +11,7 @@ use crate::flutter_engine_rs::user_data::EngineUserData;
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
 
-// I don't want to import the OpenGL header just for few macros.
+// I don't want to import the OpenGL header just for a few constants.
 const GL_TEXTURE_2D: u32 = 0x0DE1;
 const GL_RGBA8: u32 = 0x8058;
 
@@ -56,11 +56,11 @@ pub unsafe extern "C" fn gl_external_texture_frame_callback<UserData>(
 
     let texture_out = unsafe { &mut *texture_out };
 
+    // TODO(roscale): We should send width/height too and check if they are consistent.
     let texture_name = (user_data.external_texture_frame)(texture_id, &mut user_data.user_data);
 
     if let Some(texture_name) = texture_name {
         texture_out.target = GL_TEXTURE_2D;
-        println!("name {texture_name}");
         texture_out.name = texture_name;
         texture_out.format = GL_RGBA8;
 
@@ -92,11 +92,15 @@ pub unsafe extern "C" fn clear_current_callback<UserData>(user_data: *mut c_void
 }
 
 pub unsafe extern "C" fn present(_user_data: *mut c_void) -> bool {
-    unreachable!("Unused we're using the FlutterCompositor");
+    unreachable!(
+        "Unused because we're using the FlutterCompositor, but it needs to be implemented"
+    );
 }
 
 pub unsafe extern "C" fn fbo_callback(_user_data: *mut c_void) -> u32 {
-    unreachable!("Unused because we're using the FlutterCompositor");
+    unreachable!(
+        "Unused because we're using the FlutterCompositor, but it needs to be implemented"
+    );
 }
 
 pub unsafe extern "C" fn make_resource_current_callback<UserData>(user_data: *mut c_void) -> bool {
