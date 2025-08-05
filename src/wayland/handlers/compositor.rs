@@ -1,4 +1,7 @@
+use std::{cell::RefCell, rc::Rc};
+
 use smithay::{
+    backend::renderer::{ImportAll, Texture, buffer_type},
     delegate_compositor,
     reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
     wayland::{
@@ -11,7 +14,14 @@ use smithay::{
 };
 use tracing::error;
 
-use crate::state::{ClientState, State};
+use crate::{
+    flutter_engine_rs::platform_channels::{
+        encodable_value::EncodableValue, method_call::MethodCall, method_channel::MethodChannel,
+        standard_method_codec::StandardMethodCodec,
+    },
+    state::{ClientState, State},
+    wayland::handlers::xdg::MyWindowData,
+};
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -47,37 +57,96 @@ impl CompositorHandler for State {
             toplevel.send_configure();
         }
 
-        let has_buffer = with_states(surface, |data| {
-            let mut guard = data.cached_state.get::<SurfaceAttributes>();
-            let attributes = guard.current();
-            matches!(attributes.buffer, Some(BufferAssignment::NewBuffer(_)))
+        let (surface_id, buffer) = with_states(surface, |data| {
+            let id = data
+                .data_map
+                .get::<RefCell<MyWindowData>>()
+                .unwrap()
+                .borrow_mut()
+                .window_id;
+
+            let buffer = data
+                .cached_state
+                .get::<SurfaceAttributes>()
+                .current()
+                .buffer
+                .take();
+
+            (id, buffer)
         });
 
-        let texture_id = 1234;
+        if let Some(BufferAssignment::NewBuffer(buffer)) = buffer {
+            let texture = self
+                .backend
+                .x11()
+                .renderer
+                .import_buffer(&buffer, None, &[]);
 
-        self.common
-            .surfaces_by_texture_id
-            .insert(texture_id, surface.clone());
+            buffer.release();
 
-        if has_buffer {
-            if let Err(err) = self
-                .common
-                .flutter
-                .engine
-                .register_external_texture(texture_id)
-            {
-                error!("Failed to register_external_texture({texture_id}): {err}");
+            let Some(texture) = texture else {
+                error!("Can't import buffer type {:?}", buffer_type(&buffer));
                 return;
+            };
+
+            let texture = match texture {
+                Ok(texture) => texture,
+                Err(err) => {
+                    error!("Can't import buffer: {err:?}");
+                    return;
+                }
+            };
+
+            let current_texture = self
+                .common
+                .current_texture_by_surface_id
+                .get(&surface_id)
+                .cloned();
+
+            let (texture_id, is_new) = if let Some((id, current_texture)) = current_texture
+                && texture.size() == current_texture.size()
+            {
+                (id, false)
+            } else {
+                let texture_id = self.common.next_texture_id;
+                self.common.next_texture_id += 1;
+
+                (texture_id, true)
+            };
+
+            self.common
+                .textures_by_texture_id
+                .insert(texture_id, texture.clone());
+
+            self.common
+                .current_texture_by_surface_id
+                .insert(surface_id, (texture_id, texture));
+
+            if is_new {
+                self.common
+                    .flutter
+                    .engine
+                    .register_external_texture(texture_id);
             }
 
-            if let Err(err) = self
-                .common
+            self.common
                 .flutter
                 .engine
-                .mark_external_texture_frame_available(texture_id)
-            {
-                error!("Failed to mark_external_texture_frame_available({texture_id}): {err}");
-            }
+                .mark_external_texture_frame_available(texture_id);
+
+            MethodChannel::new(
+                self.common.flutter.engine.binary_messenger(),
+                "wayvern/window".to_string(),
+                Rc::new(StandardMethodCodec::new()),
+            )
+            .invoke_method(
+                "textureAttached",
+                Some(Box::new(EncodableValue::Int64List(Vec::from([
+                    surface_id as i64,
+                    texture_id,
+                ])))),
+                None,
+            );
         }
     }
 }

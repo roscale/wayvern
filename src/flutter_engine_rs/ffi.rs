@@ -60,6 +60,7 @@ pub unsafe extern "C" fn gl_external_texture_frame_callback<UserData>(
 
     if let Some(texture_name) = texture_name {
         texture_out.target = GL_TEXTURE_2D;
+        println!("name {texture_name}");
         texture_out.name = texture_name;
         texture_out.format = GL_RGBA8;
 

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use smithay::{
+    backend::renderer::gles::GlesTexture,
     desktop::Window,
     input::{Seat, SeatState},
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -51,8 +52,13 @@ pub struct Common {
     pub dmabuf_state: DmabufState,
 
     pub next_window_id: usize,
+    pub next_texture_id: i64,
+
     pub windows: Vec<Window>,
     pub surfaces_by_texture_id: HashMap<i64, WlSurface>,
+    pub textures_by_texture_id: HashMap<i64, GlesTexture>,
+    pub current_texture_by_surface_id: HashMap<usize, (i64, GlesTexture)>,
+    pub textures: Vec<GlesTexture>,
     pub initial_window_size: Option<Size<i32, Logical>>,
 }
 
@@ -152,9 +158,13 @@ impl State {
                 compositor_state,
                 xdg_shell_state,
                 dmabuf_state,
-                next_window_id: 0,
+                next_window_id: 1,
+                next_texture_id: 1,
                 windows: Vec::new(),
                 surfaces_by_texture_id: HashMap::new(),
+                textures_by_texture_id: HashMap::new(),
+                current_texture_by_surface_id: HashMap::new(),
+                textures: Vec::new(),
                 initial_window_size: None,
             },
             backend: BackendState::None,

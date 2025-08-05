@@ -78,7 +78,34 @@ class _MyHomePageState extends State<MyHomePage> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             CircularProgressIndicator(),
-            SizedBox(width: 800, height: 600, child: Texture(textureId: 1234)),
+
+            ListenableBuilder(
+              listenable: wayvern.windows,
+              builder: (context, child) {
+                if (wayvern.windows.map.isEmpty) {
+                  return SizedBox();
+                }
+
+                final window = wayvern.windows.map.values.first;
+
+                return ListenableBuilder(
+                  listenable: window,
+                  builder: (context, child) {
+                    final textureId = window.textureId;
+
+                    if (textureId == null) {
+                      return SizedBox();
+                    }
+
+                    return SizedBox(
+                      width: 800,
+                      height: 600,
+                      child: Texture(textureId: textureId),
+                    );
+                  },
+                );
+              },
+            ),
           ],
         ),
       ),

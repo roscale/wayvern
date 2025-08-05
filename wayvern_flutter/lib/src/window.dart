@@ -7,21 +7,41 @@ const windowChannel = MethodChannel('wayvern/window');
 
 final windowCreatedStreamController = StreamController<int>.broadcast();
 final windowDestroyedStreamController = StreamController<int>.broadcast();
+final textureAttachedController = StreamController<(int, int)>.broadcast();
 
 Stream<int> get windowCreated => windowCreatedStreamController.stream;
 Stream<int> get windowDestroyed => windowDestroyedStreamController.stream;
+Stream<(int, int)> get textureAttached => textureAttachedController.stream;
+
 final windows = Windows();
 
 class Windows with ChangeNotifier {
-  final ids = [];
+  final Map<int, Window> map = {};
+  final order = [];
 
   void add(int id) {
-    ids.add(id);
+    map[id] = Window(id);
+    order.add(id);
     notifyListeners();
   }
 
   void remove(int id) {
-    ids.remove(id);
+    map.remove(id);
+    order.remove(id);
+    notifyListeners();
+  }
+}
+
+class Window with ChangeNotifier {
+  final int id;
+  int? _textureId;
+
+  Window(this.id);
+
+  int? get textureId => _textureId;
+
+  set textureId(int? textureId) {
+    _textureId = textureId;
     notifyListeners();
   }
 }
@@ -38,6 +58,23 @@ void initWindowStreams() {
 
       windowDestroyedStreamController.sink.add(id);
       windows.remove(id);
+    } else if (call.method == "textureAttached") {
+      final args = call.arguments as List<int>;
+
+      final surfaceId = args[0];
+      final textureId = args[1];
+
+      textureAttachedController.sink.add((surfaceId, textureId));
+
+      final window = windows.map[surfaceId];
+      if (window == null) {
+        print(
+          "Attached texture $textureId to a non-existent surface $surfaceId",
+        );
+        return;
+      }
+
+      window.textureId = textureId;
     }
   });
 }

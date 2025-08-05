@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use smithay::{
-    backend::renderer::gles::GlesTexture,
+    backend::renderer::{gles::GlesTexture, Texture},
     delegate_xdg_shell,
     desktop::Window,
     reexports::wayland_server::protocol::wl_seat::WlSeat,
@@ -36,7 +36,8 @@ impl XdgShellHandler for State {
             states.data_map.insert_if_missing(|| {
                 RefCell::new(MyWindowData {
                     window_id,
-                    textures: Vec::new(),
+                    current_texture: None,
+                    old_texture: None,
                 })
             });
         });
@@ -103,7 +104,8 @@ impl XdgShellHandler for State {
 
 pub struct MyWindowData {
     pub window_id: usize,
-    pub textures: Vec<GlesTexture>,
+    pub current_texture: Option<GlesTexture>,
+    pub old_texture: Option<GlesTexture>,
 }
 
 delegate_xdg_shell!(State);

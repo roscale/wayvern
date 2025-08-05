@@ -9,13 +9,15 @@ use smithay::{
         egl::{EGLContext, get_proc_address},
         renderer::{Bind, ImportAll, ImportDma, Renderer, Texture, buffer_type},
     },
-    desktop::utils::surface_primary_scanout_output,
+    desktop::utils::{surface_primary_scanout_output, update_surface_primary_scanout_output},
     reexports::calloop::{
         self, LoopHandle, channel,
         timer::{TimeoutAction, Timer},
     },
     utils::{Rectangle, Transform},
-    wayland::compositor::{BufferAssignment, SurfaceAttributes, with_states},
+    wayland::compositor::{
+        BufferAssignment, SurfaceAttributes, with_states, with_surface_tree_downward,
+    },
 };
 use std::{
     cell::RefCell,
@@ -286,8 +288,8 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 window.send_frame(
                     &state.common.output,
                     state.common.clock.now(),
-                    None,
-                    surface_primary_scanout_output,
+                    Some(Duration::ZERO),
+                    |_, _| None,
                 );
             }
         })
@@ -300,74 +302,18 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 return;
             };
 
-            let Some(surface) = state.common.surfaces_by_texture_id.get(&texture_id) else {
-                error!("Failed to find surface by texture id {texture_id}");
+            let texture = state
+                .common
+                .textures_by_texture_id
+                .get(&texture_id)
+                .map(|texture| texture.tex_id());
 
-                if let Err(err) = texture_name.send(None) {
-                    error!("Failed to send texture name None: {err}");
-                    return;
-                }
+            println!("texture_id {} -> name {:?}", texture_id, texture);
 
+            if let Err(err) = texture_name.send(texture) {
+                error!("Failed to send texture name: {err}");
                 return;
-            };
-
-            with_states(surface, |data| {
-                let mut guard = data.cached_state.get::<SurfaceAttributes>();
-                let attributes = guard.current();
-
-                if let Some(BufferAssignment::NewBuffer(buffer)) = &attributes.buffer {
-                    let texture = state
-                        .backend
-                        .x11()
-                        .renderer
-                        .import_buffer(buffer, None, &[]);
-
-                    buffer.release();
-
-                    let Some(texture) = texture else {
-                        error!("Can't import buffer type {:?}", buffer_type(buffer));
-
-                        if let Err(err) = texture_name.send(None) {
-                            error!("Failed to send texture name None: {err}");
-                            return;
-                        }
-
-                        return;
-                    };
-
-                    let texture = match texture {
-                        Ok(texture) => texture,
-                        Err(err) => {
-                            error!("Can't import buffer: {err:?}");
-
-                            if let Err(err) = texture_name.send(None) {
-                                error!("Failed to send texture name None: {err}");
-                                return;
-                            }
-
-                            return;
-                        }
-                    };
-
-                    if let Err(err) = texture_name.send(Some(texture.tex_id())) {
-                        error!("Failed to send texture name {}: {err}", texture.tex_id());
-                        return;
-                    }
-
-                    data.data_map
-                        .get::<RefCell<MyWindowData>>()
-                        .unwrap()
-                        .borrow_mut()
-                        .textures
-                        .push(texture);
-                } else {
-                    error!("No buffer attached to surface");
-
-                    if let Err(err) = texture_name.send(None) {
-                        error!("Failed to send texture name None: {err}");
-                    }
-                }
-            });
+            }
         })
         .unwrap();
 
