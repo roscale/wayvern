@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use smithay::{
-    backend::renderer::{gles::GlesTexture, Texture},
+    backend::renderer::{Texture, gles::GlesTexture},
     delegate_xdg_shell,
-    desktop::Window,
+    desktop::{PopupKind, Window},
     reexports::wayland_server::protocol::wl_seat::WlSeat,
     utils::Serial,
     wayland::{
@@ -14,6 +14,7 @@ use smithay::{
         },
     },
 };
+use tracing::error;
 
 use crate::{
     flutter_engine_rs::platform_channels::{
@@ -42,17 +43,16 @@ impl XdgShellHandler for State {
             });
         });
 
-        self.common
-            .windows
-            .push(Window::new_wayland_window(surface));
+        let window = Window::new_wayland_window(surface);
 
-        let mut channel = MethodChannel::new(
+        self.common.space.map_element(window, (0, 0), true);
+
+        MethodChannel::new(
             self.common.flutter.engine.binary_messenger(),
             "wayvern/window".to_string(),
             Rc::new(StandardMethodCodec::new()),
-        );
-
-        channel.invoke_method(
+        )
+        .invoke_method(
             "windowCreated",
             Some(Box::new(EncodableValue::Int64(window_id as i64))),
             None,
@@ -69,24 +69,34 @@ impl XdgShellHandler for State {
                 .window_id
         });
 
-        self.common
-            .windows
-            .retain(|w| w.wl_surface().is_none_or(|s| &*s != surface.wl_surface()));
+        let window = self
+            .common
+            .space
+            .elements()
+            .find(|e| matches!(e.wl_surface(), Some(s) if &*s == surface.wl_surface()))
+            .cloned();
 
-        let mut channel = MethodChannel::new(
+        if let Some(window) = window {
+            self.common.space.unmap_elem(&window);
+        }
+
+        MethodChannel::new(
             self.common.flutter.engine.binary_messenger(),
             "wayvern/window".to_string(),
             Rc::new(StandardMethodCodec::new()),
-        );
-
-        channel.invoke_method(
+        )
+        .invoke_method(
             "windowDestroyed",
             Some(Box::new(EncodableValue::Int64(window_id as i64))),
             None,
         );
     }
 
-    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
+    fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
+        if let Err(err) = self.common.popups.track_popup(PopupKind::from(surface)) {
+            error!("Failed to track popup: {err}");
+        }
+    }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         todo!()

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
@@ -7,7 +5,7 @@ import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // await wayvern.setInitialWindowSize(800, 600);
+  await wayvern.setInitialWindowSize(800, 600);
 
   wayvern.init();
 

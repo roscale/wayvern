@@ -284,13 +284,15 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
                 surface.x11_surface.reset_buffers();
             }
 
-            for window in &state.common.windows {
+            let output = state.common.output.clone();
+
+            for window in state.common.space.elements() {
                 window.send_frame(
-                    &state.common.output,
+                    &output,
                     state.common.clock.now(),
                     Some(Duration::ZERO),
-                    |_, _| None,
-                );
+                    |_, _| Some(output.clone()),
+                )
             }
         })
         .unwrap();

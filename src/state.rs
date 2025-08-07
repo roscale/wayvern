@@ -2,18 +2,16 @@ use std::{collections::HashMap, path::PathBuf};
 
 use smithay::{
     backend::renderer::gles::GlesTexture,
-    desktop::Window,
+    desktop::{PopupManager, Space, Window, WindowSurface},
     input::{Seat, SeatState},
-    output::{Mode, Output, PhysicalProperties, Subpixel},
+    output::{Mode, Output, PhysicalProperties, Scale, Subpixel},
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            DisplayHandle,
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::wl_surface::WlSurface,
+            backend::{ClientData, ClientId, DisconnectReason}, protocol::wl_surface::WlSurface, DisplayHandle
         },
     },
-    utils::{Clock, Logical, Monotonic, Size},
+    utils::{Clock, Logical, Monotonic, Size, Transform},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         dmabuf::DmabufState,
@@ -38,6 +36,9 @@ pub struct Common {
     pub should_stop: bool,
     pub event_loop_signal: LoopSignal,
 
+    pub space: Space<Window>,
+    pub popups: PopupManager,
+
     pub flutter_project: PathBuf,
     pub flutter: AutoDerefOption<Flutter>,
 
@@ -54,7 +55,6 @@ pub struct Common {
     pub next_window_id: usize,
     pub next_texture_id: i64,
 
-    pub windows: Vec<Window>,
     pub surfaces_by_texture_id: HashMap<i64, WlSurface>,
     pub textures_by_texture_id: HashMap<i64, GlesTexture>,
     pub current_texture_by_surface_id: HashMap<usize, (i64, GlesTexture)>,
@@ -134,7 +134,7 @@ impl State {
             refresh: 144,
         };
         output.set_preferred(mode);
-        output.change_current_state(Some(mode), None, None, None);
+        output.change_current_state(Some(mode), None, None , None);
 
         output.create_global::<State>(&display_handle);
 
@@ -148,6 +148,8 @@ impl State {
                 display_handle,
                 should_stop: false,
                 event_loop_signal: loop_signal,
+                space: Space::default(),
+                popups: PopupManager::default(),
                 flutter_project,
                 flutter: None.into(),
                 output,
@@ -160,7 +162,6 @@ impl State {
                 dmabuf_state,
                 next_window_id: 1,
                 next_texture_id: 1,
-                windows: Vec::new(),
                 surfaces_by_texture_id: HashMap::new(),
                 textures_by_texture_id: HashMap::new(),
                 current_texture_by_surface_id: HashMap::new(),
