@@ -4,12 +4,12 @@ use smithay::{
     backend::{
         allocator::Fourcc,
         renderer::{
-            Bind, ImportAll, Offscreen, Renderer, Texture, buffer_type,
+            Bind, ImportAll, Offscreen, Renderer, Texture,
             element::{
-                AsRenderElements, Element, Kind,
+                AsRenderElements, Kind,
                 surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
             },
-            gles::{GlesRenderbuffer, GlesRenderer, GlesTarget, GlesTexture},
+            gles::GlesTexture,
             utils::{draw_render_elements, on_commit_buffer_handler},
         },
     },
@@ -18,11 +18,11 @@ use smithay::{
         PopupKind, PopupManager, Space, Window, WindowSurface, utils::with_surfaces_surface_tree,
     },
     reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
-    utils::{Buffer, Logical, Rectangle, Scale, Size, Transform},
+    utils::{Logical, Rectangle, Size, Transform},
     wayland::{
         compositor::{
-            BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-            SurfaceAttributes, get_parent, is_sync_subsurface, with_states,
+            CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+            get_parent, is_sync_subsurface, with_states,
         },
         seat::WaylandFocus,
     },
@@ -66,30 +66,31 @@ impl CompositorHandler for State {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(window) = self
-                .common
-                .space
-                .elements()
-                .find(|w| w.wl_surface().is_some_and(|s| *s == root))
-            {
-                window.on_commit();
-            }
-        };
 
+            // Even though the toplevel window is not a subsurface,
+            // it's considered desynchronized.
+            self.compose_window(&root);
+        };
+    }
+}
+
+impl State {
+    fn compose_window(&mut self, surface: &WlSurface) {
         let Some(window) = self
             .common
             .space
             .elements()
             .find(|window| window.wl_surface().is_some_and(|s| &*s == surface))
-            .cloned()
         else {
             return;
         };
 
+        window.on_commit();
+
         let output_scale = self.common.output.current_scale();
 
         let renderer = &mut self.backend.x11().renderer;
-        let render_elements = render_window(&window, renderer, output_scale.fractional_scale());
+        let render_elements = render_window(window, renderer, output_scale.fractional_scale());
 
         if render_elements.is_empty() {
             return;
@@ -212,19 +213,14 @@ fn ensure_initial_configure(
 ) {
     if let Some(window) = space
         .elements()
-        .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
-        .cloned()
+        .find(|window| window.wl_surface().is_some_and(|s| &*s == surface))
+        && let Some(toplevel) = window.toplevel()
+        && !toplevel.is_initial_configure_sent()
     {
-        if let Some(toplevel) = window.toplevel()
-            && !toplevel.is_initial_configure_sent()
-        {
-            toplevel.with_pending_state(|states| {
-                states.size = initial_window_size;
-            });
-            toplevel.send_configure();
-        }
-
-        return;
+        toplevel.with_pending_state(|states| {
+            states.size = initial_window_size;
+        });
+        toplevel.send_configure();
     }
 
     if let Some(popup) = popups.find_popup(surface) {
@@ -241,8 +237,6 @@ fn ensure_initial_configure(
             // allowed.
             popup.send_configure().expect("initial configure failed");
         }
-
-        return;
     };
 }
 

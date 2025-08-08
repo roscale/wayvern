@@ -8,7 +8,9 @@ use smithay::{
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason}, protocol::wl_surface::WlSurface, DisplayHandle
+            DisplayHandle,
+            backend::{ClientData, ClientId, DisconnectReason},
+            protocol::wl_surface::WlSurface,
         },
     },
     utils::{Clock, Logical, Monotonic, Size, Transform},
@@ -122,7 +124,7 @@ impl State {
         let output = Output::new(
             "TODO output name".to_string(),
             PhysicalProperties {
-                size: (800, 600).into(),
+                size: (1600, 1200).into(),
                 subpixel: Subpixel::Unknown,
                 make: "TODO make".to_string(),
                 model: "TODO model".to_string(),
@@ -130,11 +132,11 @@ impl State {
         );
 
         let mode = Mode {
-            size: (800, 600).into(),
+            size: (1600, 1200).into(),
             refresh: 144,
         };
         output.set_preferred(mode);
-        output.change_current_state(Some(mode), None, None , None);
+        output.change_current_state(Some(mode), None, None, None);
 
         output.create_global::<State>(&display_handle);
 
