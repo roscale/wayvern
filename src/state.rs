@@ -2,9 +2,9 @@ use std::{collections::HashMap, path::PathBuf};
 
 use smithay::{
     backend::renderer::gles::GlesTexture,
-    desktop::{PopupManager, Space, Window, WindowSurface},
+    desktop::{PopupManager, Space, Window},
     input::{Seat, SeatState},
-    output::{Mode, Output, PhysicalProperties, Scale, Subpixel},
+    output::{Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
@@ -13,7 +13,7 @@ use smithay::{
             protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Clock, Logical, Monotonic, Size, Transform},
+    utils::{Clock, Logical, Monotonic, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         dmabuf::DmabufState,
@@ -124,21 +124,16 @@ impl State {
         let output = Output::new(
             "TODO output name".to_string(),
             PhysicalProperties {
-                size: (1600, 1200).into(),
+                size: (0, 0).into(),
                 subpixel: Subpixel::Unknown,
                 make: "TODO make".to_string(),
                 model: "TODO model".to_string(),
             },
         );
-
-        let mode = Mode {
-            size: (1600, 1200).into(),
-            refresh: 144,
-        };
-        output.set_preferred(mode);
-        output.change_current_state(Some(mode), None, None, None);
-
         output.create_global::<State>(&display_handle);
+
+        let mut space = Space::default();
+        space.map_output(&output, (0, 0));
 
         let shm_state = ShmState::new::<State>(&display_handle, vec![]);
         let compositor_state = CompositorState::new::<State>(&display_handle);
@@ -150,7 +145,7 @@ impl State {
                 display_handle,
                 should_stop: false,
                 event_loop_signal: loop_signal,
-                space: Space::default(),
+                space,
                 popups: PopupManager::default(),
                 flutter_project,
                 flutter: None.into(),

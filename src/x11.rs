@@ -11,6 +11,7 @@ use smithay::backend::allocator::dmabuf::AnyError;
 use smithay::backend::allocator::gbm::GbmBufferFlags;
 use smithay::backend::allocator::{Allocator, Slot};
 use smithay::backend::x11::X11Event;
+use smithay::output::Mode;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier};
 use smithay::{
@@ -66,6 +67,16 @@ pub fn init_x11_backend(
                                 surface.view_id, size.w, size.h, err,
                             );
                         }
+
+                        let mode = Mode {
+                            size: (size.w as i32, size.h as i32).into(),
+                            refresh: 144,
+                        };
+                        state.common.output.set_preferred(mode);
+                        state
+                            .common
+                            .output
+                            .change_current_state(Some(mode), None, None, None);
 
                         break;
                     }
@@ -192,28 +203,25 @@ impl State {
             .build(&x11_state.x11_handle)
             .with_context(|| "Failed to create window")?;
 
+        let size = window.size();
         let fourcc = window.format();
-        let filtered_modifiers = x11_state.filtered_modifiers(fourcc);
+        let modifiers = x11_state.filtered_modifiers(fourcc);
 
         let x11_surface = x11_state
             .x11_handle
             .create_surface(
                 &window,
                 x11_state.create_dmabuf_allocator(),
-                filtered_modifiers.iter().copied(),
+                modifiers.iter().copied(),
             )
             .with_context(|| "Failed to create surface")?;
 
         let allocator = x11_state.create_dmabuf_allocator();
 
-        let fourcc = window.format();
-        let modifiers = x11_state.filtered_modifiers(fourcc);
-
         let swapchain = Swapchain::new(
             Box::new(allocator) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>,
-            // Dummy values, will be resized later.
-            1,
-            1,
+            size.w as u32,
+            size.h as u32,
             fourcc,
             modifiers,
         );
@@ -230,18 +238,20 @@ impl State {
             slot: None,
         };
 
-        let window_size = surface.window.size();
-
         self.common
             .flutter
             .engine
-            .add_view(
-                surface.view_id,
-                window_size.w as usize,
-                window_size.h as usize,
-                |_| {},
-            )
+            .add_view(surface.view_id, size.w as usize, size.h as usize, |_| {})
             .with_context(|| format!("Failed to add new Flutter view {}", surface.view_id))?;
+
+        let mode = Mode {
+            size: (size.w as i32, size.h as i32).into(),
+            refresh: 144,
+        };
+        self.common.output.set_preferred(mode);
+        self.common
+            .output
+            .change_current_state(Some(mode), None, None, None);
 
         x11_state.surfaces.push(surface);
 

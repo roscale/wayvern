@@ -5,7 +5,7 @@ import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await wayvern.setInitialWindowSize(1600, 1200);
+  // await wayvern.setInitialWindowSize(1600, 1200);
 
   wayvern.init();
 

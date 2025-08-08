@@ -1,26 +1,20 @@
 use crate::{
     flutter_engine_rs::{Engine, EngineCallbacks},
     state::Flutter,
-    wayland::handlers::xdg::MyWindowData,
 };
 use anyhow::{Context, Result};
 use smithay::{
     backend::{
         egl::{EGLContext, get_proc_address},
-        renderer::{Bind, ImportAll, ImportDma, Renderer, Texture, buffer_type},
+        renderer::{Bind, ImportDma, Renderer, Texture},
     },
-    desktop::utils::{surface_primary_scanout_output, update_surface_primary_scanout_output},
     reexports::calloop::{
         self, LoopHandle, channel,
         timer::{TimeoutAction, Timer},
     },
     utils::{Rectangle, Transform},
-    wayland::compositor::{
-        BufferAssignment, SurfaceAttributes, with_states, with_surface_tree_downward,
-    },
 };
 use std::{
-    cell::RefCell,
     ffi::c_void,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
