@@ -22,7 +22,7 @@ use smithay::{
     wayland::{
         compositor::{
             BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-            SurfaceAttributes, with_states,
+            SurfaceAttributes, get_parent, is_sync_subsurface, with_states,
         },
         seat::WaylandFocus,
     },
@@ -52,7 +52,6 @@ impl CompositorHandler for State {
 
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
-
         self.common.popups.commit(surface);
 
         ensure_initial_configure(
@@ -62,17 +61,30 @@ impl CompositorHandler for State {
             &mut self.common.popups,
         );
 
+        if !is_sync_subsurface(surface) {
+            let mut root = surface.clone();
+            while let Some(parent) = get_parent(&root) {
+                root = parent;
+            }
+            if let Some(window) = self
+                .common
+                .space
+                .elements()
+                .find(|w| w.wl_surface().is_some_and(|s| *s == root))
+            {
+                window.on_commit();
+            }
+        };
+
         let Some(window) = self
             .common
             .space
             .elements()
-            .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
+            .find(|window| window.wl_surface().is_some_and(|s| &*s == surface))
             .cloned()
         else {
             return;
         };
-
-        window.on_commit();
 
         let output_scale = self.common.output.current_scale();
 
@@ -189,8 +201,6 @@ impl CompositorHandler for State {
                 None,
             );
         }
-
-        // }
     }
 }
 
@@ -205,13 +215,13 @@ fn ensure_initial_configure(
         .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
         .cloned()
     {
-        if let Some(toplevel) = window.toplevel() {
-            if !toplevel.is_initial_configure_sent() {
-                toplevel.with_pending_state(|states| {
-                    states.size = initial_window_size;
-                });
-                toplevel.send_configure();
-            }
+        if let Some(toplevel) = window.toplevel()
+            && !toplevel.is_initial_configure_sent()
+        {
+            toplevel.with_pending_state(|states| {
+                states.size = initial_window_size;
+            });
+            toplevel.send_configure();
         }
 
         return;
