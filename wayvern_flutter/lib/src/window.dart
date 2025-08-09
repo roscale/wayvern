@@ -93,6 +93,22 @@ Future<void> setInitialWindowSize(int width, int height) async {
   await windowChannel.invokeMethod("setInitialWindowSize", [width, height]);
 }
 
-Future<void> motion(int surfaceId, double x, double y) async {
+Future<void> pointerMotion(int surfaceId, double x, double y) async {
   await windowChannel.invokeMethod("motion", [surfaceId, x, y]);
+}
+
+Future<void> pointerButton(
+  int surfaceId,
+  double x,
+  double y,
+  int button,
+  bool pressed,
+) async {
+  await windowChannel.invokeMethod("button", [
+    surfaceId,
+    x,
+    y,
+    button,
+    pressed,
+  ]);
 }

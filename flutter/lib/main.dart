@@ -82,10 +82,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         return ListenableBuilder(
                           listenable: window,
                           builder: (_, _) {
-                            return MouseRegion(
-                              onHover: (event) {
-                                wayvern.motion(window.id, event.localPosition.dx, event.localPosition.dy);
-                              },
+                            return wayvern.SurfaceInputListener(
+                              surfaceId: window.id,
                               child: SizedBox(
                                 width: window.width.toDouble(),
                                 height: window.height.toDouble(),

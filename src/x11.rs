@@ -1,4 +1,4 @@
-use crate::flutter_engine_rs::mouse_button_tracker::FlutterMouseButton;
+use crate::flutter_engine_rs::mouse_button_tracker::{FlutterMouseButton, flutter_to_linux_button};
 use crate::flutter_engine_rs::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine_rs::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::state::{BackendState, State};
@@ -18,7 +18,7 @@ use smithay::backend::input::{
 };
 use smithay::backend::x11::X11Event;
 use smithay::desktop::WindowSurfaceType;
-use smithay::input::pointer::MotionEvent;
+use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::output::Mode;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier};
@@ -218,10 +218,10 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
                     };
 
                     let surface_id = list[0].long_value().unwrap();
-
-                    let (EncodableValue::Double(x), EncodableValue::Double(y)) =
-                        (&list[1], &list[2])
-                    else {
+                    let EncodableValue::Double(x) = list[1] else {
+                        panic!();
+                    };
+                    let EncodableValue::Double(y) = list[2] else {
                         panic!();
                     };
 
@@ -238,13 +238,11 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
                     let Some(window) = window else {
                         let message = format!("Window with surface id {surface_id} doesn't exist");
                         error!(message);
-
                         result.error("error".to_string(), message, None);
-
                         return;
                     };
 
-                    let point: Point<f64, Logical> = (*x, *y).into();
+                    let point: Point<f64, Logical> = (x, y).into();
 
                     if let Some((surface, location)) =
                         window.surface_under(point, WindowSurfaceType::ALL)
@@ -252,8 +250,6 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
                         let pointer = state.common.seat.get_pointer().unwrap();
                         let location = point - location.to_f64();
                         let time = Duration::from(state.common.clock.now()).as_millis() as u32;
-
-                        dbg!(&location);
 
                         pointer.motion(
                             state,
@@ -269,6 +265,69 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
 
                     result.success(None);
                 }
+                "button" => {
+                    let arguments = method_call.arguments().unwrap();
+                    let EncodableValue::List(list) = arguments else {
+                        panic!();
+                    };
+
+                    let surface_id = list[0].long_value().unwrap();
+                    let EncodableValue::Double(x) = list[1] else {
+                        panic!();
+                    };
+                    let EncodableValue::Double(y) = list[2] else {
+                        panic!();
+                    };
+                    let button = list[3].long_value().unwrap() as u32;
+                    let EncodableValue::Bool(pressed) = list[4] else {
+                        panic!();
+                    };
+
+                    let window = state.common.space.elements().find(|window| {
+                        window
+                            .user_data()
+                            .get::<RefCell<MyWindowData>>()
+                            .unwrap()
+                            .borrow()
+                            .surface_id as i64
+                            == surface_id
+                    });
+
+                    let Some(window) = window else {
+                        let message = format!("Window with surface id {surface_id} doesn't exist");
+                        error!(message);
+                        result.error("error".to_string(), message, None);
+                        return;
+                    };
+
+                    let point: Point<f64, Logical> = (x, y).into();
+
+                    if let Some((surface, location)) =
+                        window.surface_under(point, WindowSurfaceType::ALL)
+                    {
+                        let pointer = state.common.seat.get_pointer().unwrap();
+                        let location = point - location.to_f64();
+                        let time = Duration::from(state.common.clock.now()).as_millis() as u32;
+
+                        pointer.button(
+                            state,
+                            &ButtonEvent {
+                                serial: SERIAL_COUNTER.next_serial(),
+                                time,
+                                button: flutter_to_linux_button(button),
+                                state: if pressed {
+                                    ButtonState::Pressed
+                                } else {
+                                    ButtonState::Released
+                                },
+                            },
+                        );
+                        pointer.frame(state);
+                    }
+
+                    result.success(None);
+                }
+
                 _ => result.not_implemented(),
             }
         })
