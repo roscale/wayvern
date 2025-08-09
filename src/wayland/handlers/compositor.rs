@@ -15,15 +15,14 @@ use smithay::{
     },
     delegate_compositor,
     desktop::{
-        PopupKind, PopupManager, Space, Window, WindowSurface, space::SpaceElement,
-        utils::with_surfaces_surface_tree,
+        PopupKind, PopupManager, Space, Window, WindowSurface, utils::with_surfaces_surface_tree,
     },
     reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
     utils::{Logical, Rectangle, Size, Transform},
     wayland::{
         compositor::{
             CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
-            get_parent, is_sync_subsurface, with_states,
+            get_parent, is_sync_subsurface,
         },
         seat::WaylandFocus,
     },
@@ -133,13 +132,12 @@ impl State {
             .unwrap();
         }
 
-        let surface_id = with_states(surface, |data| {
-            data.data_map
-                .get::<RefCell<MyWindowData>>()
-                .unwrap()
-                .borrow_mut()
-                .window_id
-        });
+        let surface_id = window
+            .user_data()
+            .get::<RefCell<MyWindowData>>()
+            .unwrap()
+            .borrow_mut()
+            .surface_id;
 
         let current_texture = self
             .common

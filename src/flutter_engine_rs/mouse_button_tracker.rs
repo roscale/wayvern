@@ -5,8 +5,7 @@ use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterPointerMouseButtons_kFlutterPointerButtonMouseForward,
     FlutterPointerMouseButtons_kFlutterPointerButtonMouseMiddle,
     FlutterPointerMouseButtons_kFlutterPointerButtonMousePrimary,
-    FlutterPointerMouseButtons_kFlutterPointerButtonMouseSecondary, FlutterPointerPhase,
-    FlutterPointerPhase_kDown, FlutterPointerPhase_kMove, FlutterPointerPhase_kUp,
+    FlutterPointerMouseButtons_kFlutterPointerButtonMouseSecondary,
 };
 
 #[derive(Debug, Hash, PartialEq, Eq)]

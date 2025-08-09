@@ -10,9 +10,11 @@ use smithay::{
         pointer::{self, PointerTarget},
         touch::{self, TouchTarget},
     },
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
+    reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface},
     utils::{IsAlive, Serial},
-    wayland::{seat::WaylandFocus, shell::xdg::PopupSurface},
+    wayland::{
+        seat::WaylandFocus, selection::data_device::set_data_device_focus, shell::xdg::PopupSurface,
+    },
 };
 
 use crate::state::State;
@@ -26,6 +28,13 @@ impl SeatHandler for State {
 
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.common.seat_state
+    }
+
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&KeyboardFocusTarget>) {
+        let display_handle = &self.common.display_handle;
+        let client =
+            focused.and_then(|s| display_handle.get_client(s.wl_surface().unwrap().id()).ok());
+        set_data_device_focus(display_handle, seat, client);
     }
 }
 
@@ -100,22 +109,22 @@ impl WaylandFocus for TouchFocusTarget {
 impl KeyboardTarget<State> for KeyboardFocusTarget {
     fn enter(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
+        seat: &Seat<State>,
+        data: &mut State,
         _keys: Vec<KeysymHandle<'_>>,
         _serial: Serial,
     ) {
         todo!()
     }
 
-    fn leave(&self, _seat: &Seat<State>, _data: &mut State, _serial: Serial) {
+    fn leave(&self, seat: &Seat<State>, data: &mut State, _serial: Serial) {
         todo!()
     }
 
     fn key(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
+        seat: &Seat<State>,
+        data: &mut State,
         _key: KeysymHandle<'_>,
         _state: KeyState,
         _serial: Serial,
@@ -126,8 +135,8 @@ impl KeyboardTarget<State> for KeyboardFocusTarget {
 
     fn modifiers(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
+        seat: &Seat<State>,
+        data: &mut State,
         _modifiers: ModifiersState,
         _serial: Serial,
     ) {
@@ -136,160 +145,196 @@ impl KeyboardTarget<State> for KeyboardFocusTarget {
 }
 
 impl PointerTarget<State> for PointerFocusTarget {
-    fn enter(&self, _seat: &Seat<State>, _data: &mut State, _event: &pointer::MotionEvent) {
-        todo!()
+    fn enter(&self, seat: &Seat<State>, data: &mut State, event: &pointer::MotionEvent) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::enter(s, seat, data, event),
+        }
     }
 
-    fn motion(&self, _seat: &Seat<State>, _data: &mut State, _event: &pointer::MotionEvent) {
-        todo!()
+    fn motion(&self, seat: &Seat<State>, data: &mut State, event: &pointer::MotionEvent) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::motion(s, seat, data, event),
+        }
     }
 
     fn relative_motion(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::RelativeMotionEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::RelativeMotionEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::relative_motion(s, seat, data, event)
+            }
+        }
     }
 
-    fn button(&self, _seat: &Seat<State>, _data: &mut State, _event: &pointer::ButtonEvent) {
-        todo!()
+    fn button(&self, seat: &Seat<State>, data: &mut State, event: &pointer::ButtonEvent) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::button(s, seat, data, event),
+        }
     }
 
-    fn axis(&self, _seat: &Seat<State>, _data: &mut State, _frame: pointer::AxisFrame) {
-        todo!()
+    fn axis(&self, seat: &Seat<State>, data: &mut State, frame: pointer::AxisFrame) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::axis(s, seat, data, frame),
+        }
     }
 
-    fn frame(&self, _seat: &Seat<State>, _data: &mut State) {
-        todo!()
+    fn frame(&self, seat: &Seat<State>, data: &mut State) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::frame(s, seat, data),
+        }
     }
 
     fn gesture_swipe_begin(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GestureSwipeBeginEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeBeginEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_swipe_begin(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_swipe_update(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GestureSwipeUpdateEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeUpdateEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_swipe_update(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_swipe_end(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GestureSwipeEndEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeEndEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_swipe_end(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_pinch_begin(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GesturePinchBeginEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchBeginEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_pinch_begin(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_pinch_update(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GesturePinchUpdateEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchUpdateEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_pinch_update(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_pinch_end(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GesturePinchEndEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchEndEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_pinch_end(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_hold_begin(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GestureHoldBeginEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureHoldBeginEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_hold_begin(s, seat, data, event)
+            }
+        }
     }
 
     fn gesture_hold_end(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &pointer::GestureHoldEndEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureHoldEndEvent,
     ) {
-        todo!()
+        match self {
+            PointerFocusTarget::WlSurface(s) => {
+                PointerTarget::gesture_hold_end(s, seat, data, event)
+            }
+        }
     }
 
-    fn leave(&self, _seat: &Seat<State>, _data: &mut State, _serial: Serial, _time: u32) {
-        todo!()
+    fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {
+        match self {
+            PointerFocusTarget::WlSurface(s) => PointerTarget::leave(s, seat, data, serial, time),
+        }
     }
 }
 
 impl TouchTarget<State> for TouchFocusTarget {
-    fn down(
-        &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &touch::DownEvent,
-        _seq: Serial,
-    ) {
+    fn down(&self, seat: &Seat<State>, data: &mut State, event: &touch::DownEvent, _seq: Serial) {
         todo!()
     }
 
-    fn up(&self, _seat: &Seat<State>, _data: &mut State, _event: &touch::UpEvent, _seq: Serial) {
+    fn up(&self, seat: &Seat<State>, data: &mut State, event: &touch::UpEvent, _seq: Serial) {
         todo!()
     }
 
     fn motion(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &touch::MotionEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &touch::MotionEvent,
         _seq: Serial,
     ) {
         todo!()
     }
 
-    fn frame(&self, _seat: &Seat<State>, _data: &mut State, _seq: Serial) {
+    fn frame(&self, seat: &Seat<State>, data: &mut State, _seq: Serial) {
         todo!()
     }
 
-    fn cancel(&self, _seat: &Seat<State>, _data: &mut State, _seq: Serial) {
+    fn cancel(&self, seat: &Seat<State>, data: &mut State, _seq: Serial) {
         todo!()
     }
 
-    fn shape(
-        &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &touch::ShapeEvent,
-        _seq: Serial,
-    ) {
+    fn shape(&self, seat: &Seat<State>, data: &mut State, event: &touch::ShapeEvent, _seq: Serial) {
         todo!()
     }
 
     fn orientation(
         &self,
-        _seat: &Seat<State>,
-        _data: &mut State,
-        _event: &touch::OrientationEvent,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &touch::OrientationEvent,
         _seq: Serial,
     ) {
         todo!()

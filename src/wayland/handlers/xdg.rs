@@ -30,20 +30,18 @@ impl XdgShellHandler for State {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window_id = self.common.next_window_id;
-        self.common.next_window_id += 1;
-
-        with_states(surface.wl_surface(), |states| {
-            states.data_map.insert_if_missing(|| {
-                RefCell::new(MyWindowData {
-                    window_id,
-                    current_texture: None,
-                    old_texture: None,
-                })
-            });
-        });
+        let surface_id = self.common.next_surface_id;
+        self.common.next_surface_id += 1;
 
         let window = Window::new_wayland_window(surface);
+
+        window.user_data().insert_if_missing(|| {
+            RefCell::new(MyWindowData {
+                surface_id,
+                current_texture: None,
+                old_texture: None,
+            })
+        });
 
         self.common.space.map_element(window, (0, 0), true);
 
@@ -54,31 +52,28 @@ impl XdgShellHandler for State {
         )
         .invoke_method(
             "windowCreated",
-            Some(Box::new(EncodableValue::Int64(window_id as i64))),
+            Some(Box::new(EncodableValue::Int64(surface_id as i64))),
             None,
         );
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        let window_id = with_states(surface.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<RefCell<MyWindowData>>()
-                .unwrap()
-                .borrow_mut()
-                .window_id
-        });
-
         let window = self
             .common
             .space
             .elements()
             .find(|e| matches!(e.wl_surface(), Some(s) if &*s == surface.wl_surface()))
-            .cloned();
+            .cloned()
+            .unwrap();
 
-        if let Some(window) = window {
-            self.common.space.unmap_elem(&window);
-        }
+        self.common.space.unmap_elem(&window);
+
+        let surface_id = window
+            .user_data()
+            .get::<RefCell<MyWindowData>>()
+            .unwrap()
+            .borrow_mut()
+            .surface_id;
 
         MethodChannel::new(
             self.common.flutter.engine.binary_messenger(),
@@ -87,7 +82,7 @@ impl XdgShellHandler for State {
         )
         .invoke_method(
             "windowDestroyed",
-            Some(Box::new(EncodableValue::Int64(window_id as i64))),
+            Some(Box::new(EncodableValue::Int64(surface_id as i64))),
             None,
         );
     }
@@ -113,7 +108,7 @@ impl XdgShellHandler for State {
 }
 
 pub struct MyWindowData {
-    pub window_id: usize,
+    pub surface_id: usize,
     pub current_texture: Option<GlesTexture>,
     pub old_texture: Option<GlesTexture>,
 }

@@ -2,6 +2,8 @@ use crate::flutter_engine_rs::mouse_button_tracker::FlutterMouseButton;
 use crate::flutter_engine_rs::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine_rs::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::state::{BackendState, State};
+use crate::wayland::handlers::seat::PointerFocusTarget;
+use crate::wayland::handlers::xdg::MyWindowData;
 use crate::x11::flutter_engine::start_flutter_engine;
 use crate::{
     channel_method_call_handler::ChannelMethodCallHandler,
@@ -14,10 +16,13 @@ use smithay::backend::allocator::{Allocator, Slot};
 use smithay::backend::input::{
     AbsolutePositionEvent, ButtonState, InputEvent, MouseButton, PointerButtonEvent,
 };
-use smithay::backend::x11::{X11Event, X11Input};
+use smithay::backend::x11::X11Event;
+use smithay::desktop::WindowSurfaceType;
+use smithay::input::pointer::MotionEvent;
 use smithay::output::Mode;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier};
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::{
     backend::{
         allocator::{
@@ -33,8 +38,10 @@ use smithay::{
     reexports::{calloop::LoopHandle, gbm::Device as GbmDevice, wayland_server::DisplayHandle},
     utils::DeviceFd,
 };
+use std::cell::RefCell;
 use std::os::fd::OwnedFd;
 use std::rc::Rc;
+use std::time::Duration;
 use tracing::error;
 
 mod flutter_engine;
@@ -201,6 +208,64 @@ fn register_flutter_channels(loop_handle: LoopHandle<State>, state: &mut State) 
                     let height = list[1].long_value().unwrap();
 
                     state.common.initial_window_size = Some((width as i32, height as i32).into());
+
+                    result.success(None);
+                }
+                "motion" => {
+                    let arguments = method_call.arguments().unwrap();
+                    let EncodableValue::List(list) = arguments else {
+                        panic!();
+                    };
+
+                    let surface_id = list[0].long_value().unwrap();
+
+                    let (EncodableValue::Double(x), EncodableValue::Double(y)) =
+                        (&list[1], &list[2])
+                    else {
+                        panic!();
+                    };
+
+                    let window = state.common.space.elements().find(|window| {
+                        window
+                            .user_data()
+                            .get::<RefCell<MyWindowData>>()
+                            .unwrap()
+                            .borrow()
+                            .surface_id as i64
+                            == surface_id
+                    });
+
+                    let Some(window) = window else {
+                        let message = format!("Window with surface id {surface_id} doesn't exist");
+                        error!(message);
+
+                        result.error("error".to_string(), message, None);
+
+                        return;
+                    };
+
+                    let point: Point<f64, Logical> = (*x, *y).into();
+
+                    if let Some((surface, location)) =
+                        window.surface_under(point, WindowSurfaceType::ALL)
+                    {
+                        let pointer = state.common.seat.get_pointer().unwrap();
+                        let location = point - location.to_f64();
+                        let time = Duration::from(state.common.clock.now()).as_millis() as u32;
+
+                        dbg!(&location);
+
+                        pointer.motion(
+                            state,
+                            Some((PointerFocusTarget::WlSurface(surface), (0.0, 0.0).into())),
+                            &MotionEvent {
+                                location,
+                                serial: SERIAL_COUNTER.next_serial(),
+                                time,
+                            },
+                        );
+                        pointer.frame(state);
+                    }
 
                     result.success(None);
                 }

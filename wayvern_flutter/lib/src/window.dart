@@ -92,3 +92,7 @@ void initWindowStreams() {
 Future<void> setInitialWindowSize(int width, int height) async {
   await windowChannel.invokeMethod("setInitialWindowSize", [width, height]);
 }
+
+Future<void> motion(int surfaceId, double x, double y) async {
+  await windowChannel.invokeMethod("motion", [surfaceId, x, y]);
+}

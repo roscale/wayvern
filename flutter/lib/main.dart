@@ -84,7 +84,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           builder: (_, _) {
                             return MouseRegion(
                               onHover: (event) {
-                                print(event.localPosition);
+                                wayvern.motion(window.id, event.localPosition.dx, event.localPosition.dy);
                               },
                               child: SizedBox(
                                 width: window.width.toDouble(),

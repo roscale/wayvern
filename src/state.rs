@@ -8,17 +8,12 @@ use smithay::{
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            DisplayHandle,
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::wl_surface::WlSurface,
+            backend::{ClientData, ClientId, DisconnectReason}, protocol::wl_surface::WlSurface, DisplayHandle
         },
     },
     utils::{Clock, Logical, Monotonic, Size},
     wayland::{
-        compositor::{CompositorClientState, CompositorState},
-        dmabuf::DmabufState,
-        shell::xdg::XdgShellState,
-        shm::ShmState,
+        compositor::{CompositorClientState, CompositorState}, dmabuf::DmabufState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState
     },
 };
 
@@ -50,11 +45,12 @@ pub struct Common {
     pub shm_state: ShmState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
+    pub data_device_state: DataDeviceState,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub dmabuf_state: DmabufState,
 
-    pub next_window_id: usize,
+    pub next_surface_id: usize,
     pub next_texture_id: i64,
 
     pub surfaces_by_texture_id: HashMap<i64, WlSurface>,
@@ -119,6 +115,7 @@ impl State {
 
         // TODO(roscale): Different seat name for X11 and DRM modes.
         let mut seat = seat_state.new_wl_seat(&display_handle, "<TODO seat name>");
+        seat.add_pointer();
         seat.add_keyboard(Default::default(), 300, 25).unwrap();
 
         let output = Output::new(
@@ -130,14 +127,15 @@ impl State {
                 model: "TODO model".to_string(),
             },
         );
-        output.create_global::<State>(&display_handle);
+        output.create_global::<Self>(&display_handle);
 
         let mut space = Space::default();
         space.map_output(&output, (0, 0));
 
-        let shm_state = ShmState::new::<State>(&display_handle, vec![]);
-        let compositor_state = CompositorState::new::<State>(&display_handle);
-        let xdg_shell_state = XdgShellState::new::<State>(&display_handle);
+        let data_device_state = DataDeviceState::new::<Self>(&display_handle);
+        let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
+        let compositor_state = CompositorState::new::<Self>(&display_handle);
+        let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
         let dmabuf_state = DmabufState::new();
 
         Self {
@@ -154,10 +152,11 @@ impl State {
                 shm_state,
                 seat_state,
                 seat,
+                data_device_state,
                 compositor_state,
                 xdg_shell_state,
                 dmabuf_state,
-                next_window_id: 1,
+                next_surface_id: 1,
                 next_texture_id: 1,
                 surfaces_by_texture_id: HashMap::new(),
                 textures_by_texture_id: HashMap::new(),
