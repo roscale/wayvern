@@ -4,12 +4,15 @@ mod engine_handle;
 mod ffi;
 mod flutter_engine_sys;
 mod monotonic_time;
+pub mod mouse_button_tracker;
 pub mod platform_channels;
 mod task_runner;
 mod user_data;
 
 use crate::flutter_engine_rs::{
-    binary_messenger_impl::BinaryMessengerImpl, monotonic_time::get_monotonic_time,
+    binary_messenger_impl::BinaryMessengerImpl,
+    monotonic_time::monotonic_time,
+    mouse_button_tracker::{FlutterMouseButton, FlutterMouseButtonTracker},
 };
 use anyhow::{Result, ensure};
 pub use engine_callbacks::EngineCallbacks;
@@ -28,6 +31,7 @@ pub struct Engine<UserData> {
     handle: EngineHandle,
     engine_user_data: Box<EngineUserData<UserData>>,
     platform_task_runner: task_runner::TaskRunner,
+    mouse_button_tracker: FlutterMouseButtonTracker,
 }
 
 impl<UserData> Engine<UserData> {
@@ -237,6 +241,7 @@ impl<UserData> Engine<UserData> {
             handle: EngineHandle(handle),
             engine_user_data,
             platform_task_runner,
+            mouse_button_tracker: FlutterMouseButtonTracker::new(),
         };
 
         Ok(flutter_engine)
@@ -301,8 +306,12 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn get_current_time(&self) -> u64 {
-        get_monotonic_time()
+    pub fn current_time_ns(&self) -> u64 {
+        monotonic_time()
+    }
+
+    pub fn current_time_us(&self) -> u64 {
+        monotonic_time() / 1000
     }
 
     pub fn on_vsync(
@@ -363,6 +372,96 @@ impl<UserData> Engine<UserData> {
         ensure!(
             result == 0,
             "Could not mark external texture frame available, error {result}"
+        );
+
+        Ok(())
+    }
+
+    pub fn motion(&mut self, x: f64, y: f64) -> Result<()> {
+        let event = FlutterPointerEvent {
+            struct_size: size_of::<FlutterPointerEvent>(),
+            phase: if self.mouse_button_tracker.are_any_buttons_pressed() {
+                FlutterPointerPhase_kMove
+            } else {
+                FlutterPointerPhase_kHover
+            },
+            timestamp: self.current_time_us() as usize,
+            x,
+            y,
+            device: 0,
+            signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindNone,
+            scroll_delta_x: 0.0,
+            scroll_delta_y: 0.0,
+            device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
+            buttons: self.mouse_button_tracker.get_bitmask(),
+            pan_x: 0.0,
+            pan_y: 0.0,
+            scale: 0.0,
+            rotation: 0.0,
+            view_id: 0,
+        };
+
+        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+
+        ensure!(
+            result == 0,
+            "Could not send motion pointer event, error {result}"
+        );
+
+        Ok(())
+    }
+
+    pub fn button(
+        &mut self,
+        button: FlutterMouseButton,
+        pressed: bool,
+        x: f64,
+        y: f64,
+    ) -> Result<()> {
+        let phase = if pressed {
+            let are_any_buttons_pressed = self.mouse_button_tracker.are_any_buttons_pressed();
+            self.mouse_button_tracker.press(button);
+
+            if are_any_buttons_pressed {
+                FlutterPointerPhase_kMove
+            } else {
+                FlutterPointerPhase_kDown
+            }
+        } else {
+            self.mouse_button_tracker.release(button);
+            let are_any_buttons_pressed = self.mouse_button_tracker.are_any_buttons_pressed();
+
+            if are_any_buttons_pressed {
+                FlutterPointerPhase_kMove
+            } else {
+                FlutterPointerPhase_kUp
+            }
+        };
+
+        let event = FlutterPointerEvent {
+            struct_size: size_of::<FlutterPointerEvent>(),
+            phase,
+            timestamp: self.current_time_us() as usize,
+            x,
+            y,
+            device: 0,
+            signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindNone,
+            scroll_delta_x: 0.0,
+            scroll_delta_y: 0.0,
+            device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
+            buttons: self.mouse_button_tracker.get_bitmask(),
+            pan_x: 0.0,
+            pan_y: 0.0,
+            scale: 0.0,
+            rotation: 0.0,
+            view_id: 0,
+        };
+
+        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+
+        ensure!(
+            result == 0,
+            "Could not send button pointer event, error {result}"
         );
 
         Ok(())

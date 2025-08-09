@@ -15,7 +15,8 @@ use smithay::{
     },
     delegate_compositor,
     desktop::{
-        PopupKind, PopupManager, Space, Window, WindowSurface, utils::with_surfaces_surface_tree,
+        PopupKind, PopupManager, Space, Window, WindowSurface, space::SpaceElement,
+        utils::with_surfaces_surface_tree,
     },
     reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
     utils::{Logical, Rectangle, Size, Transform},
@@ -69,13 +70,13 @@ impl CompositorHandler for State {
 
             // Even though the toplevel window is not a subsurface,
             // it's considered desynchronized.
-            self.compose_window(&root);
+            self.render_window(&root);
         };
     }
 }
 
 impl State {
-    fn compose_window(&mut self, surface: &WlSurface) {
+    fn render_window(&mut self, surface: &WlSurface) {
         let Some(window) = self
             .common
             .space
@@ -90,7 +91,8 @@ impl State {
         let output_scale = self.common.output.current_scale();
 
         let renderer = &mut self.backend.x11().renderer;
-        let render_elements = render_window(window, renderer, output_scale.fractional_scale());
+        let render_elements =
+            render_window_elements(window, renderer, output_scale.fractional_scale());
 
         if render_elements.is_empty() {
             return;
@@ -240,7 +242,7 @@ fn ensure_initial_configure(
     };
 }
 
-fn render_window<R>(
+fn render_window_elements<R>(
     window: &Window,
     renderer: &mut R,
     scale: f64,

@@ -82,10 +82,15 @@ class _MyHomePageState extends State<MyHomePage> {
                         return ListenableBuilder(
                           listenable: window,
                           builder: (_, _) {
-                            return SizedBox(
-                              width: window.width.toDouble(),
-                              height: window.height.toDouble(),
-                              child: Texture(textureId: window.textureId),
+                            return MouseRegion(
+                              onHover: (event) {
+                                print(event.localPosition);
+                              },
+                              child: SizedBox(
+                                width: window.width.toDouble(),
+                                height: window.height.toDouble(),
+                                child: Texture(textureId: window.textureId),
+                              ),
                             );
                           },
                         );

@@ -315,7 +315,7 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
         .insert_source(timer, move |_, _, state| {
             if let Some(baton) = pending_baton.lock().unwrap().take() {
                 let engine = &mut state.common.flutter.engine;
-                let now = engine.get_current_time();
+                let now = engine.current_time_ns();
 
                 if let Err(err) = engine.on_vsync(baton, now, now + 7000000) {
                     error!("engine.on_vsync failed, {err}");

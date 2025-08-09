@@ -7,7 +7,7 @@ use crate::flutter_engine_rs::engine_handle::EngineHandle;
 use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterEngineGetCurrentTime, FlutterEngineRunTask, FlutterTask,
 };
-use crate::flutter_engine_rs::monotonic_time::get_monotonic_time;
+use crate::flutter_engine_rs::monotonic_time::monotonic_time;
 
 pub fn spawn_task_runner() -> TaskRunner {
     let (tasks_tx, mut tasks_rx) = mpsc::channel();
@@ -113,7 +113,7 @@ impl TaskPoster {
                 task: Task::Callback(Box::new(move || {
                     tx_response.send(f()).unwrap();
                 })),
-                target_time: get_monotonic_time(),
+                target_time: monotonic_time(),
             })
             .expect("Failed to send callback to platform thread");
 

@@ -1,3 +1,4 @@
+use crate::flutter_engine_rs::mouse_button_tracker::FlutterMouseButton;
 use crate::flutter_engine_rs::platform_channels::method_channel::MethodChannel;
 use crate::flutter_engine_rs::platform_channels::standard_method_codec::StandardMethodCodec;
 use crate::state::{BackendState, State};
@@ -10,7 +11,10 @@ use anyhow::{Context, Result};
 use smithay::backend::allocator::dmabuf::AnyError;
 use smithay::backend::allocator::gbm::GbmBufferFlags;
 use smithay::backend::allocator::{Allocator, Slot};
-use smithay::backend::x11::X11Event;
+use smithay::backend::input::{
+    AbsolutePositionEvent, ButtonState, InputEvent, MouseButton, PointerButtonEvent,
+};
+use smithay::backend::x11::{X11Event, X11Input};
 use smithay::output::Mode;
 use smithay::reexports::calloop::channel;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier};
@@ -82,6 +86,42 @@ pub fn init_x11_backend(
                     }
                 }
             }
+            X11Event::Input { event, .. } => match event {
+                InputEvent::PointerMotionAbsolute { event } => {
+                    state.backend.x11().mouse_position = (event.x(), event.y());
+                    // TODO(roscale): send Add event
+                    let _ = state.common.flutter.engine.motion(event.x(), event.y());
+                }
+                InputEvent::PointerButton { event } => {
+                    let Some(button) = event.button() else {
+                        return;
+                    };
+
+                    let flutter_mouse_button = match button {
+                        MouseButton::Left => FlutterMouseButton::Primary,
+                        MouseButton::Middle => FlutterMouseButton::Middle,
+                        MouseButton::Right => FlutterMouseButton::Secondary,
+                        MouseButton::Back => FlutterMouseButton::Back,
+                        MouseButton::Forward => FlutterMouseButton::Forward,
+                        _ => return,
+                    };
+
+                    let pressed = match event.state() {
+                        ButtonState::Released => false,
+                        ButtonState::Pressed => true,
+                    };
+
+                    let mouse_position = state.backend.x11().mouse_position;
+
+                    let _ = state.common.flutter.engine.button(
+                        flutter_mouse_button,
+                        pressed,
+                        mouse_position.0,
+                        mouse_position.1,
+                    );
+                }
+                _ => {}
+            },
             _ => {}
         })
         .expect("Failed to insert X11 Backend into event loop");
@@ -117,6 +157,7 @@ pub fn init_x11_backend(
         surfaces: vec![],
 
         next_view_id: 0,
+        mouse_position: (0.0, 0.0),
     }));
 
     let flutter = start_flutter_engine(loop_handle.clone(), state)
@@ -177,6 +218,7 @@ pub struct X11State {
     pub surfaces: Vec<Surface>,
 
     pub next_view_id: i64,
+    pub mouse_position: (f64, f64),
 }
 
 impl X11State {
