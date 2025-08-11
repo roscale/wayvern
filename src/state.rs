@@ -8,19 +8,25 @@ use smithay::{
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason}, protocol::wl_surface::WlSurface, DisplayHandle
+            DisplayHandle,
+            backend::{ClientData, ClientId, DisconnectReason},
+            protocol::wl_surface::WlSurface,
         },
     },
     utils::{Clock, Logical, Monotonic, Size},
     wayland::{
-        compositor::{CompositorClientState, CompositorState}, dmabuf::DmabufState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState
+        compositor::{CompositorClientState, CompositorState},
+        dmabuf::DmabufState,
+        selection::data_device::DataDeviceState,
+        shell::xdg::XdgShellState,
+        shm::ShmState,
     },
 };
 
 use crate::{
     flutter_engine_rs::Engine,
     utils::AutoDerefOption,
-    x11::{UserData, X11State},
+    x11::{UserData, state::X11State},
 };
 
 pub struct State {

@@ -1,4 +1,4 @@
-use crate::x11::init_x11_backend;
+use crate::x11::state::init_x11_backend;
 use anyhow::{Context, Result};
 use smithay::{
     reexports::{

@@ -44,13 +44,7 @@ class SurfaceInputListener extends StatelessWidget {
     );
 
     for (final button in buttons) {
-      await pointerButton(
-        surfaceId,
-        event.localPosition.dx,
-        event.localPosition.dy,
-        button.button,
-        button.pressed,
-      );
+      await pointerButton(button.button, button.pressed);
     }
   }
 }

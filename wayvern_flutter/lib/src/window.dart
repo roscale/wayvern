@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 
 const windowChannel = MethodChannel('wayvern/window');
 
-final windowCreatedStreamController = StreamController<int>.broadcast();
-final windowDestroyedStreamController = StreamController<int>.broadcast();
-final textureAttachedController = StreamController<(int, int)>.broadcast();
+final _windowCreatedStreamController = StreamController<int>.broadcast();
+final _windowDestroyedStreamController = StreamController<int>.broadcast();
+final _textureAttachedController = StreamController<(int, int)>.broadcast();
 
-Stream<int> get windowCreated => windowCreatedStreamController.stream;
-Stream<int> get windowDestroyed => windowDestroyedStreamController.stream;
-Stream<(int, int)> get textureAttached => textureAttachedController.stream;
+Stream<int> get windowCreated => _windowCreatedStreamController.stream;
+Stream<int> get windowDestroyed => _windowDestroyedStreamController.stream;
+Stream<(int, int)> get textureAttached => _textureAttachedController.stream;
 
 final windows = Windows();
 
@@ -60,12 +60,12 @@ void initWindowStreams() {
     if (call.method == "windowCreated") {
       final id = call.arguments as int;
 
-      windowCreatedStreamController.sink.add(id);
+      _windowCreatedStreamController.sink.add(id);
       windows.add(id);
     } else if (call.method == "windowDestroyed") {
       final id = call.arguments as int;
 
-      windowDestroyedStreamController.sink.add(id);
+      _windowDestroyedStreamController.sink.add(id);
       windows.remove(id);
     } else if (call.method == "textureAttached") {
       final args = call.arguments as List<int>;
@@ -76,6 +76,7 @@ void initWindowStreams() {
       final height = args[3];
 
       final window = windows.map[surfaceId];
+
       if (window == null) {
         print(
           "Attached texture $textureId to a non-existent surface $surfaceId",
@@ -83,7 +84,7 @@ void initWindowStreams() {
         return;
       }
 
-      textureAttachedController.sink.add((surfaceId, textureId));
+      _textureAttachedController.sink.add((surfaceId, textureId));
       window.attachTexture(textureId, width, height);
     }
   });
@@ -97,18 +98,6 @@ Future<void> pointerMotion(int surfaceId, double x, double y) async {
   await windowChannel.invokeMethod("motion", [surfaceId, x, y]);
 }
 
-Future<void> pointerButton(
-  int surfaceId,
-  double x,
-  double y,
-  int button,
-  bool pressed,
-) async {
-  await windowChannel.invokeMethod("button", [
-    surfaceId,
-    x,
-    y,
-    button,
-    pressed,
-  ]);
+Future<void> pointerButton(int button, bool pressed) async {
+  await windowChannel.invokeMethod("button", [button, pressed]);
 }
