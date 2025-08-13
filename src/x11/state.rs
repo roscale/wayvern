@@ -44,7 +44,6 @@ pub struct X11State {
     pub surfaces: Vec<Surface>,
 
     pub next_view_id: i64,
-    pub mouse_position: (f64, f64),
 }
 
 #[derive(Debug)]
@@ -101,7 +100,6 @@ pub fn init_x11_backend(
         surfaces: vec![],
 
         next_view_id: 0,
-        mouse_position: (0.0, 0.0),
     }));
 
     let flutter = start_flutter_engine(loop_handle.clone(), state)

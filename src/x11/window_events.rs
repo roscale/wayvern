@@ -64,7 +64,6 @@ pub fn handle_pointer_absolute_motion(
     state: &mut State,
 ) {
     // TODO(roscale): We should send an Add event to Flutter before sending the rest.
-    state.backend.x11().mouse_position = (event.x(), event.y());
     let _ = state.common.flutter.engine.motion(event.x(), event.y());
 }
 
@@ -90,14 +89,11 @@ pub fn handle_pointer_button(
         ButtonState::Pressed => true,
     };
 
-    let mouse_position = state.backend.x11().mouse_position;
-
-    let _ = state.common.flutter.engine.button(
-        flutter_mouse_button,
-        pressed,
-        mouse_position.0,
-        mouse_position.1,
-    );
+    let _ = state
+        .common
+        .flutter
+        .engine
+        .button(flutter_mouse_button, pressed);
 }
 
 pub fn handle_pointer_axis(event: <X11Input as InputBackend>::PointerAxisEvent, state: &mut State) {
@@ -142,11 +138,5 @@ pub fn handle_pointer_axis(event: <X11Input as InputBackend>::PointerAxisEvent, 
     pointer.axis(state, frame);
     pointer.frame(state);
 
-    let mouse_position = state.backend.x11().mouse_position;
-
-    let _ = state
-        .common
-        .flutter
-        .engine
-        .axis(mouse_position.0, mouse_position.1, dx, dy);
+    let _ = state.common.flutter.engine.axis(dx, dy);
 }

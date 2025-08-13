@@ -32,6 +32,7 @@ pub struct Engine<UserData> {
     engine_user_data: Box<EngineUserData<UserData>>,
     platform_task_runner: task_runner::TaskRunner,
     mouse_button_tracker: FlutterMouseButtonTracker,
+    mouse_position: (f64, f64),
 }
 
 impl<UserData> Engine<UserData> {
@@ -242,6 +243,7 @@ impl<UserData> Engine<UserData> {
             engine_user_data,
             platform_task_runner,
             mouse_button_tracker: FlutterMouseButtonTracker::new(),
+            mouse_position: (0.0, 0.0),
         };
 
         Ok(flutter_engine)
@@ -378,6 +380,8 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn motion(&mut self, x: f64, y: f64) -> Result<()> {
+        self.mouse_position = (x, y);
+
         let event = FlutterPointerEvent {
             struct_size: size_of::<FlutterPointerEvent>(),
             phase: if self.mouse_button_tracker.are_any_buttons_pressed() {
@@ -411,13 +415,7 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn button(
-        &mut self,
-        button: FlutterMouseButton,
-        pressed: bool,
-        x: f64,
-        y: f64,
-    ) -> Result<()> {
+    pub fn button(&mut self, button: FlutterMouseButton, pressed: bool) -> Result<()> {
         let phase = if pressed {
             let are_any_buttons_pressed = self.mouse_button_tracker.are_any_buttons_pressed();
             self.mouse_button_tracker.press(button);
@@ -442,8 +440,8 @@ impl<UserData> Engine<UserData> {
             struct_size: size_of::<FlutterPointerEvent>(),
             phase,
             timestamp: self.current_time_us() as usize,
-            x,
-            y,
+            x: self.mouse_position.0,
+            y: self.mouse_position.1,
             device: 0,
             signal_kind: FlutterPointerSignalKind_kFlutterPointerSignalKindNone,
             scroll_delta_x: 0.0,
@@ -467,21 +465,19 @@ impl<UserData> Engine<UserData> {
         Ok(())
     }
 
-    pub fn axis(&mut self, x: f64, y: f64, dx: f64, dy: f64) -> Result<()> {
+    pub fn axis(&mut self, dx: f64, dy: f64) -> Result<()> {
         let phase = if self.mouse_button_tracker.are_any_buttons_pressed() {
             FlutterPointerPhase_kMove
         } else {
             FlutterPointerPhase_kDown
         };
 
-        dbg!((dx, dy));
-
         let event = FlutterPointerEvent {
             struct_size: size_of::<FlutterPointerEvent>(),
             phase,
             timestamp: self.current_time_us() as usize,
-            x,
-            y,
+            x: self.mouse_position.0,
+            y: self.mouse_position.1,
             device: 0,
             signal_kind: if (dx, dy) != (0.0, 0.0) {
                 FlutterPointerSignalKind_kFlutterPointerSignalKindScroll
