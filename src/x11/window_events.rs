@@ -1,11 +1,12 @@
 use smithay::{
     backend::{
         input::{
-            AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, MouseButton,
-            PointerButtonEvent,
+            AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+            MouseButton, PointerAxisEvent, PointerButtonEvent,
         },
         x11::{X11Event, X11Input},
     },
+    input::pointer::AxisFrame,
     output::Mode,
     utils::{Logical, Size},
 };
@@ -24,6 +25,7 @@ pub fn handle_input_event(event: X11Event, state: &mut State) {
                 handle_pointer_absolute_motion(event, state)
             }
             InputEvent::PointerButton { event } => handle_pointer_button(event, state),
+            InputEvent::PointerAxis { event } => handle_pointer_axis(event, state),
             _ => {}
         },
         _ => {}
@@ -96,4 +98,55 @@ pub fn handle_pointer_button(
         mouse_position.0,
         mouse_position.1,
     );
+}
+
+pub fn handle_pointer_axis(event: <X11Input as InputBackend>::PointerAxisEvent, state: &mut State) {
+    let scroll_factor = 1.0;
+
+    let mut frame = AxisFrame::new(event.time_msec()).source(event.source());
+
+    if let Some(horizontal_amount) = event.amount(Axis::Horizontal) {
+        if horizontal_amount != 0.0 {
+            frame = frame.value(Axis::Horizontal, scroll_factor * horizontal_amount);
+        } else {
+            frame = frame.stop(Axis::Horizontal);
+        }
+    }
+
+    if let Some(discrete) = event.amount_v120(Axis::Horizontal) {
+        frame = frame.v120(Axis::Horizontal, (discrete * scroll_factor).round() as i32);
+    }
+
+    if let Some(vertical_amount) = event.amount(Axis::Vertical) {
+        if vertical_amount != 0.0 {
+            frame = frame.value(Axis::Vertical, scroll_factor * vertical_amount);
+        } else {
+            frame = frame.stop(Axis::Vertical);
+        }
+    }
+
+    if let Some(discrete) = event.amount_v120(Axis::Vertical) {
+        frame = frame.v120(Axis::Vertical, (discrete * scroll_factor).round() as i32);
+    }
+
+    let (dx, dy) = if frame.axis != (0.0, 0.0) {
+        frame.axis
+    } else if let Some(v120) = frame.v120 {
+        (v120.0 as f64, v120.1 as f64)
+    } else {
+        (0.0, 0.0)
+    };
+
+    let pointer = state.common.seat.get_pointer().unwrap();
+
+    pointer.axis(state, frame);
+    pointer.frame(state);
+
+    let mouse_position = state.backend.x11().mouse_position;
+
+    let _ = state
+        .common
+        .flutter
+        .engine
+        .axis(mouse_position.0, mouse_position.1, dx, dy);
 }

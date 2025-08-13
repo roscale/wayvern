@@ -71,6 +71,14 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             CircularProgressIndicator(),
             Padding(padding: EdgeInsetsGeometry.only(top: 50)),
+            SizedBox(
+              height: 200,
+              child: ListView.builder(
+                itemBuilder: (_, i) => Text("$i"),
+                itemCount: 100,
+              ),
+            ),
+            Padding(padding: EdgeInsetsGeometry.only(top: 50)),
 
             ListenableBuilder(
               listenable: wayvern.windows,

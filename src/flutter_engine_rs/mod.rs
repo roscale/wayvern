@@ -466,6 +466,48 @@ impl<UserData> Engine<UserData> {
 
         Ok(())
     }
+
+    pub fn axis(&mut self, x: f64, y: f64, dx: f64, dy: f64) -> Result<()> {
+        let phase = if self.mouse_button_tracker.are_any_buttons_pressed() {
+            FlutterPointerPhase_kMove
+        } else {
+            FlutterPointerPhase_kDown
+        };
+
+        dbg!((dx, dy));
+
+        let event = FlutterPointerEvent {
+            struct_size: size_of::<FlutterPointerEvent>(),
+            phase,
+            timestamp: self.current_time_us() as usize,
+            x,
+            y,
+            device: 0,
+            signal_kind: if (dx, dy) != (0.0, 0.0) {
+                FlutterPointerSignalKind_kFlutterPointerSignalKindScroll
+            } else {
+                FlutterPointerSignalKind_kFlutterPointerSignalKindScrollInertiaCancel
+            },
+            scroll_delta_x: dx,
+            scroll_delta_y: dy,
+            device_kind: FlutterPointerDeviceKind_kFlutterPointerDeviceKindMouse,
+            buttons: self.mouse_button_tracker.get_bitmask(),
+            pan_x: 0.0,
+            pan_y: 0.0,
+            scale: 0.0,
+            rotation: 0.0,
+            view_id: 0,
+        };
+
+        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+
+        ensure!(
+            result == 0,
+            "Could not send button pointer event, error {result}"
+        );
+
+        Ok(())
+    }
 }
 
 impl<UserData> Drop for Engine<UserData> {
