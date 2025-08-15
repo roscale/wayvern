@@ -2,17 +2,22 @@ use smithay::{
     backend::{
         input::{
             AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-            MouseButton, PointerAxisEvent, PointerButtonEvent,
+            KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent,
         },
         x11::{X11Event, X11Input},
     },
-    input::pointer::AxisFrame,
+    input::{keyboard::keysyms, pointer::AxisFrame},
     output::Mode,
     utils::{Logical, Size},
 };
 use tracing::error;
 
-use crate::{flutter_engine_rs::mouse_button_tracker::FlutterMouseButton, state::State};
+use crate::{
+    flutter_engine_rs::{
+        KeyState, keyboard::modifiers::FlutterModifiers, mouse_button_tracker::FlutterMouseButton,
+    },
+    state::State,
+};
 
 pub fn handle_input_event(event: X11Event, state: &mut State) {
     match event {
@@ -26,6 +31,7 @@ pub fn handle_input_event(event: X11Event, state: &mut State) {
             }
             InputEvent::PointerButton { event } => handle_pointer_button(event, state),
             InputEvent::PointerAxis { event } => handle_pointer_axis(event, state),
+            InputEvent::Keyboard { event } => handle_keyboard(event, state),
             _ => {}
         },
         _ => {}
@@ -139,4 +145,34 @@ pub fn handle_pointer_axis(event: <X11Input as InputBackend>::PointerAxisEvent, 
     pointer.frame(state);
 
     let _ = state.common.flutter.engine.axis(dx, dy);
+}
+
+pub fn handle_keyboard(event: <X11Input as InputBackend>::KeyboardKeyEvent, state: &mut State) {
+    let keyboard = state.common.seat.get_keyboard().unwrap();
+
+    let ((mods, keysym), mods_changed) = keyboard.input_intercept(
+        state,
+        event.key_code(),
+        event.state(),
+        |state, mods, keysym| (*mods, keysym.modified_sym()),
+    );
+
+    state.common.flutter.engine.send_key(
+        match event.state() {
+            smithay::backend::input::KeyState::Released => KeyState::Up,
+            smithay::backend::input::KeyState::Pressed => KeyState::Down,
+        },
+        event.key_code().raw(),
+        keysym.raw(),
+        keysym.key_char(),
+        FlutterModifiers {
+            ctrl: mods.ctrl,
+            alt: mods.alt,
+            shift: mods.shift,
+            logo: mods.logo,
+            caps_lock: mods.caps_lock,
+            num_lock: mods.num_lock,
+        },
+        false,
+    );
 }

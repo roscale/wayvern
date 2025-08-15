@@ -3,6 +3,7 @@ mod engine_callbacks;
 mod engine_handle;
 mod ffi;
 mod flutter_engine_sys;
+pub mod keyboard;
 mod monotonic_time;
 pub mod mouse_button_tracker;
 pub mod platform_channels;
@@ -11,20 +12,32 @@ mod user_data;
 
 use crate::flutter_engine_rs::{
     binary_messenger_impl::BinaryMessengerImpl,
+    keyboard::{
+        gtk_to_logical::GTK_TO_LOGICAL_MAP,
+        modifiers::{FlutterModifiers, get_modifiers_bitfield},
+        xkb_to_physical::XKB_TO_PHYSICAL_MAP,
+    },
     monotonic_time::monotonic_time,
     mouse_button_tracker::{FlutterMouseButton, FlutterMouseButtonTracker},
+    platform_channels::{
+        basic_message_channel::BasicMessageChannel, json_message_codec::JsonMessageCodec,
+    },
 };
 use anyhow::{Result, ensure};
 pub use engine_callbacks::EngineCallbacks;
 use engine_handle::EngineHandle;
 use flutter_engine_sys::*;
+use serde_json::json;
+use smithay::reexports::winit::keyboard::Key;
 use std::{
     ffi::{CString, c_int, c_void},
     mem::size_of,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf, absolute},
     ptr::{null, null_mut},
+    rc::Rc,
 };
+use tracing::error;
 use user_data::EngineUserData;
 
 pub struct Engine<UserData> {
@@ -316,6 +329,10 @@ impl<UserData> Engine<UserData> {
         monotonic_time() / 1000
     }
 
+    pub fn current_time_us_f64(&self) -> f64 {
+        monotonic_time() as f64 / 1000.0
+    }
+
     pub fn on_vsync(
         &self,
         baton: isize,
@@ -346,7 +363,14 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn register_external_texture(&self, texture_id: i64) -> Result<()> {
-        let result = unsafe { FlutterEngineRegisterExternalTexture(*self.handle, texture_id) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe {
+                FlutterEngineRegisterExternalTexture(*handle, texture_id)
+            });
 
         ensure!(
             result == 0,
@@ -357,7 +381,14 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn _unregister_external_texture(&self, texture_id: i64) -> Result<()> {
-        let result = unsafe { FlutterEngineUnregisterExternalTexture(*self.handle, texture_id) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe {
+                FlutterEngineUnregisterExternalTexture(*handle, texture_id)
+            });
 
         ensure!(
             result == 0,
@@ -368,8 +399,14 @@ impl<UserData> Engine<UserData> {
     }
 
     pub fn mark_external_texture_frame_available(&self, texture_id: i64) -> Result<()> {
-        let result =
-            unsafe { FlutterEngineMarkExternalTextureFrameAvailable(*self.handle, texture_id) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe {
+                FlutterEngineMarkExternalTextureFrameAvailable(*handle, texture_id)
+            });
 
         ensure!(
             result == 0,
@@ -405,7 +442,12 @@ impl<UserData> Engine<UserData> {
             view_id: 0,
         };
 
-        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe { FlutterEngineSendPointerEvent(*handle, &event, 1) });
 
         ensure!(
             result == 0,
@@ -455,7 +497,12 @@ impl<UserData> Engine<UserData> {
             view_id: 0,
         };
 
-        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe { FlutterEngineSendPointerEvent(*handle, &event, 1) });
 
         ensure!(
             result == 0,
@@ -495,7 +542,12 @@ impl<UserData> Engine<UserData> {
             view_id: 0,
         };
 
-        let result = unsafe { FlutterEngineSendPointerEvent(*self.handle, &event, 1) };
+        let handle = self.handle;
+
+        let result = self
+            .platform_task_runner
+            .poster
+            .post_callback(move || unsafe { FlutterEngineSendPointerEvent(*handle, &event, 1) });
 
         ensure!(
             result == 0,
@@ -503,6 +555,86 @@ impl<UserData> Engine<UserData> {
         );
 
         Ok(())
+    }
+
+    pub fn send_key(
+        &mut self,
+        key_state: KeyState,
+        key_code: u32,
+        keysym: u32,
+        character: Option<char>,
+        modifiers: FlutterModifiers,
+        synthesized: bool,
+    ) {
+        let result = {
+            let physical = match XKB_TO_PHYSICAL_MAP.get(&key_code).copied() {
+                Some(physical) => physical,
+                None => key_code as u64,
+            };
+
+            let logical = match GTK_TO_LOGICAL_MAP.get(&keysym).copied() {
+                Some(logical) => logical,
+                None => keysym as u64,
+            };
+
+            let character = character.and_then(|c| match key_state {
+                KeyState::Down | KeyState::Repeat => CString::new(c.to_string()).ok(),
+                KeyState::Up => None,
+            });
+
+            let event = {
+                FlutterKeyEvent {
+                    struct_size: size_of::<FlutterKeyEvent>(),
+                    timestamp: self.current_time_us_f64(),
+                    type_: match key_state {
+                        KeyState::Down => FlutterKeyEventType_kFlutterKeyEventTypeDown,
+                        KeyState::Up => FlutterKeyEventType_kFlutterKeyEventTypeUp,
+                        KeyState::Repeat => FlutterKeyEventType_kFlutterKeyEventTypeRepeat,
+                    },
+                    physical,
+                    logical,
+                    character: character.as_ref().map(|c| c.as_ptr()).unwrap_or(null()),
+                    synthesized,
+                    device_type: FlutterKeyEventDeviceType_kFlutterKeyEventDeviceTypeKeyboard,
+                }
+            };
+
+            let handle = self.handle;
+
+            self.platform_task_runner
+                .poster
+                .post_callback(move || unsafe {
+                    FlutterEngineSendKeyEvent(*handle, &event, None, null_mut())
+                })
+        };
+
+        if result != 0 {
+            eprintln!("Failed to send key event, error {result}");
+            return;
+        }
+
+        // https://github.com/flutter/flutter/blob/90a892293c166a96acca5743876a96fbc244be8c/packages/flutter/lib/src/services/hardware_keyboard.dart#L895
+
+        BasicMessageChannel::new(
+            self.binary_messenger(),
+            "flutter/keyevent".to_string(),
+            Rc::new(JsonMessageCodec::new()),
+        )
+        .send(
+            &json!({
+                "keymap": "linux",
+                "toolkit": "gtk",
+                "scanCode": key_code,
+                "keyCode": keysym,
+                "unicodeScalarValues": character.map(|c| c as u32).unwrap_or(0),
+                "modifiers": get_modifiers_bitfield(modifiers),
+                "type": match key_state {
+                    KeyState::Down | KeyState::Repeat => "keydown",
+                    KeyState::Up => "keyup",
+                },
+            }),
+            None,
+        );
     }
 }
 
@@ -514,6 +646,12 @@ impl<UserData> Drop for Engine<UserData> {
             eprintln!("Failed to shut down Flutter engine, error {result}");
         }
     }
+}
+
+pub enum KeyState {
+    Down,
+    Up,
+    Repeat,
 }
 
 fn create_view_metrics(width: usize, height: usize, view_id: i64) -> FlutterWindowMetricsEvent {

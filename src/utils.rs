@@ -33,4 +33,3 @@ impl<T> From<Option<T>> for AutoDerefOption<T> {
         Self(value)
     }
 }
-
