@@ -8,7 +8,7 @@ use smithay::{
     },
     input::{keyboard::keysyms, pointer::AxisFrame},
     output::Mode,
-    utils::{Logical, Size},
+    utils::{Logical, SERIAL_COUNTER, Size},
 };
 use tracing::error;
 
@@ -157,7 +157,7 @@ pub fn handle_keyboard(event: <X11Input as InputBackend>::KeyboardKeyEvent, stat
         |state, mods, keysym| (*mods, keysym.modified_sym()),
     );
 
-    state.common.flutter.engine.send_key(
+    let handled = state.common.flutter.engine.send_key(
         match event.state() {
             smithay::backend::input::KeyState::Released => KeyState::Up,
             smithay::backend::input::KeyState::Pressed => KeyState::Down,
@@ -175,4 +175,24 @@ pub fn handle_keyboard(event: <X11Input as InputBackend>::KeyboardKeyEvent, stat
         },
         false,
     );
+
+    let forward = match handled {
+        Ok(true) => false,
+        Ok(false) => true,
+        Err(err) => {
+            error!("{err}");
+            true
+        }
+    };
+
+    if forward {
+        keyboard.input_forward(
+            state,
+            event.key_code(),
+            event.state(),
+            SERIAL_COUNTER.next_serial(),
+            event.time_msec(),
+            mods_changed,
+        );
+    }
 }

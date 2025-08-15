@@ -2,7 +2,7 @@ use std::{cell::RefCell, time::Duration};
 
 use smithay::{
     backend::input::ButtonState,
-    desktop::WindowSurfaceType,
+    desktop::{WindowSurfaceType, space::SpaceElement},
     input::pointer::{ButtonEvent, MotionEvent},
     utils::{Logical, Point, SERIAL_COUNTER},
 };
@@ -16,7 +16,10 @@ use crate::{
         },
     },
     state::State,
-    wayland::handlers::{seat::PointerFocusTarget, xdg::MyWindowData},
+    wayland::handlers::{
+        seat::{KeyboardFocusTarget, PointerFocusTarget},
+        xdg::MyWindowData,
+    },
 };
 
 pub fn handle_channel_events(
@@ -75,15 +78,20 @@ fn handle_motion(
         panic!();
     };
 
-    let window = state.common.space.elements().find(|window| {
-        window
-            .user_data()
-            .get::<RefCell<MyWindowData>>()
-            .unwrap()
-            .borrow()
-            .surface_id as i64
-            == surface_id
-    });
+    let window = state
+        .common
+        .space
+        .elements()
+        .find(|window| {
+            window
+                .user_data()
+                .get::<RefCell<MyWindowData>>()
+                .unwrap()
+                .borrow()
+                .surface_id as i64
+                == surface_id
+        })
+        .cloned();
 
     let Some(window) = window else {
         let message = format!("Window with surface id {surface_id} doesn't exist");
@@ -110,6 +118,13 @@ fn handle_motion(
         );
         pointer.frame(state);
     }
+
+    let keyboard = state.common.seat.get_keyboard().unwrap();
+    keyboard.set_focus(
+        state,
+        Some(KeyboardFocusTarget::Window(window)),
+        SERIAL_COUNTER.next_serial(),
+    );
 
     result.success(None);
 }

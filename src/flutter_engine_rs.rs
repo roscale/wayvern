@@ -12,6 +12,7 @@ mod user_data;
 
 use crate::flutter_engine_rs::{
     binary_messenger_impl::BinaryMessengerImpl,
+    ffi::key_event_callback,
     keyboard::{
         gtk_to_logical::GTK_TO_LOGICAL_MAP,
         modifiers::{FlutterModifiers, get_modifiers_bitfield},
@@ -36,6 +37,8 @@ use std::{
     path::{Path, PathBuf, absolute},
     ptr::{null, null_mut},
     rc::Rc,
+    sync::mpsc,
+    time::Instant,
 };
 use tracing::error;
 use user_data::EngineUserData;
@@ -560,16 +563,20 @@ impl<UserData> Engine<UserData> {
     pub fn send_key(
         &mut self,
         key_state: KeyState,
-        key_code: u32,
+        keycode: u32,
         keysym: u32,
         character: Option<char>,
         modifiers: FlutterModifiers,
         synthesized: bool,
-    ) {
+    ) -> Result<bool> {
+        // https://github.com/flutter/flutter/blob/3bf280c86fb9c083e05a7cd60f27f8a5e5c21424/engine/src/flutter/shell/platform/linux/fl_key_channel_responder.cc
+
+        let (mut key_handled_tx, key_handled_rx) = mpsc::channel::<bool>();
+
         let result = {
-            let physical = match XKB_TO_PHYSICAL_MAP.get(&key_code).copied() {
+            let physical = match XKB_TO_PHYSICAL_MAP.get(&keycode).copied() {
                 Some(physical) => physical,
-                None => key_code as u64,
+                None => keycode as u64,
             };
 
             let logical = match GTK_TO_LOGICAL_MAP.get(&keysym).copied() {
@@ -604,14 +611,16 @@ impl<UserData> Engine<UserData> {
             self.platform_task_runner
                 .poster
                 .post_callback(move || unsafe {
-                    FlutterEngineSendKeyEvent(*handle, &event, None, null_mut())
+                    FlutterEngineSendKeyEvent(
+                        *handle,
+                        &event,
+                        Some(key_event_callback),
+                        Box::into_raw(Box::new(key_handled_tx)) as *mut c_void,
+                    )
                 })
         };
 
-        if result != 0 {
-            eprintln!("Failed to send key event, error {result}");
-            return;
-        }
+        ensure!(result == 0, "Failed to send key event, error {result}");
 
         // https://github.com/flutter/flutter/blob/90a892293c166a96acca5743876a96fbc244be8c/packages/flutter/lib/src/services/hardware_keyboard.dart#L895
 
@@ -624,7 +633,7 @@ impl<UserData> Engine<UserData> {
             &json!({
                 "keymap": "linux",
                 "toolkit": "gtk",
-                "scanCode": key_code,
+                "scanCode": keycode,
                 "keyCode": keysym,
                 "unicodeScalarValues": character.map(|c| c as u32).unwrap_or(0),
                 "modifiers": get_modifiers_bitfield(modifiers),
@@ -635,6 +644,12 @@ impl<UserData> Engine<UserData> {
             }),
             None,
         );
+
+        // TODO(roscale): I should probably register the receiver on the event loop instead of
+        // blocking. It's usually fast, but sometimes it takes up to 1-2 ms.
+        // Can this be solved by setting thread priorities?
+        let handled = key_handled_rx.recv();
+        Ok(handled?)
     }
 }
 

@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
 use smithay::{
-    backend::input::KeyState,
+    backend::{input::KeyState, x11},
     delegate_seat,
-    desktop::Window,
+    desktop::{Window, WindowSurface},
     input::{
         Seat, SeatHandler, SeatState,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -111,36 +111,100 @@ impl KeyboardTarget<State> for KeyboardFocusTarget {
         &self,
         seat: &Seat<State>,
         data: &mut State,
-        _keys: Vec<KeysymHandle<'_>>,
-        _serial: Serial,
+        keys: Vec<KeysymHandle<'_>>,
+        serial: Serial,
     ) {
-        todo!()
+        match self {
+            KeyboardFocusTarget::Window(window) => match window.underlying_surface() {
+                WindowSurface::Wayland(toplevel_surface) => {
+                    KeyboardTarget::enter(toplevel_surface.wl_surface(), seat, data, keys, serial)
+                }
+                WindowSurface::X11(x11_surface) => {
+                    KeyboardTarget::enter(x11_surface, seat, data, keys, serial)
+                }
+            },
+            KeyboardFocusTarget::Popup(popup_surface) => {
+                KeyboardTarget::enter(popup_surface.wl_surface(), seat, data, keys, serial)
+            }
+        }
     }
 
-    fn leave(&self, seat: &Seat<State>, data: &mut State, _serial: Serial) {
-        todo!()
+    fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {
+        match self {
+            KeyboardFocusTarget::Window(window) => match window.underlying_surface() {
+                WindowSurface::Wayland(toplevel_surface) => {
+                    KeyboardTarget::leave(toplevel_surface.wl_surface(), seat, data, serial)
+                }
+                WindowSurface::X11(x11_surface) => {
+                    KeyboardTarget::leave(x11_surface, seat, data, serial)
+                }
+            },
+            KeyboardFocusTarget::Popup(popup_surface) => {
+                KeyboardTarget::leave(popup_surface.wl_surface(), seat, data, serial)
+            }
+        }
     }
 
     fn key(
         &self,
         seat: &Seat<State>,
         data: &mut State,
-        _key: KeysymHandle<'_>,
-        _state: KeyState,
-        _serial: Serial,
-        _time: u32,
+        key: KeysymHandle<'_>,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
     ) {
-        todo!()
+        match self {
+            KeyboardFocusTarget::Window(window) => match window.underlying_surface() {
+                WindowSurface::Wayland(toplevel_surface) => KeyboardTarget::key(
+                    toplevel_surface.wl_surface(),
+                    seat,
+                    data,
+                    key,
+                    state,
+                    serial,
+                    time,
+                ),
+                WindowSurface::X11(x11_surface) => {
+                    KeyboardTarget::key(x11_surface, seat, data, key, state, serial, time)
+                }
+            },
+            KeyboardFocusTarget::Popup(popup_surface) => KeyboardTarget::key(
+                popup_surface.wl_surface(),
+                seat,
+                data,
+                key,
+                state,
+                serial,
+                time,
+            ),
+        }
     }
 
     fn modifiers(
         &self,
         seat: &Seat<State>,
         data: &mut State,
-        _modifiers: ModifiersState,
-        _serial: Serial,
+        modifiers: ModifiersState,
+        serial: Serial,
     ) {
-        todo!()
+        match self {
+            KeyboardFocusTarget::Window(window) => match window.underlying_surface() {
+                WindowSurface::Wayland(toplevel_surface) => KeyboardTarget::modifiers(
+                    toplevel_surface.wl_surface(),
+                    seat,
+                    data,
+                    modifiers,
+                    serial,
+                ),
+                WindowSurface::X11(x11_surface) => {
+                    KeyboardTarget::modifiers(x11_surface, seat, data, modifiers, serial)
+                }
+            },
+            KeyboardFocusTarget::Popup(popup_surface) => {
+                KeyboardTarget::modifiers(popup_surface.wl_surface(), seat, data, modifiers, serial)
+            }
+        }
     }
 }
 

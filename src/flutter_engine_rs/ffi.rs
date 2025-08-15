@@ -1,3 +1,5 @@
+use tracing::error;
+
 use crate::flutter_engine_rs::flutter_engine_sys::{
     FlutterAddViewResult, FlutterBackingStore, FlutterBackingStore__bindgen_ty_1,
     FlutterBackingStoreConfig, FlutterBackingStoreType_kFlutterBackingStoreTypeOpenGL,
@@ -10,6 +12,7 @@ use crate::flutter_engine_rs::task_runner::TaskPoster;
 use crate::flutter_engine_rs::user_data::EngineUserData;
 use std::ffi::{CStr, c_char, c_void};
 use std::ptr::null_mut;
+use std::sync::mpsc;
 
 // I don't want to import the OpenGL header just for a few constants.
 const GL_TEXTURE_2D: u32 = 0x0DE1;
@@ -187,8 +190,8 @@ pub unsafe extern "C" fn present_view_callback<UserData>(
 }
 
 pub unsafe extern "C" fn log_message_callback(
-    tag: *const std::os::raw::c_char,
-    message: *const std::os::raw::c_char,
+    tag: *const c_char,
+    message: *const c_char,
     _user_data: *mut c_void,
 ) {
     let tag = unsafe { CStr::from_ptr(tag).to_string_lossy() };
@@ -202,4 +205,12 @@ pub unsafe extern "C" fn add_view_callback(result: *const FlutterAddViewResult) 
 
     let callback = unsafe { Box::from_raw(result.user_data as *mut Box<dyn Fn(bool)>) };
     callback(result.added);
+}
+
+pub unsafe extern "C" fn key_event_callback(handled: bool, user_data: *mut c_void) {
+    let tx = unsafe { Box::from_raw(user_data as *mut mpsc::Sender<bool>) };
+
+    if let Err(err) = tx.send(handled) {
+        error!("Failed to return handled key state, {err}");
+    }
 }
