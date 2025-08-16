@@ -93,9 +93,7 @@ impl XdgShellHandler for State {
         }
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
-        todo!()
-    }
+    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
 
     fn reposition_request(
         &mut self,
@@ -103,7 +101,6 @@ impl XdgShellHandler for State {
         _positioner: PositionerState,
         _token: u32,
     ) {
-        todo!()
     }
 }
 

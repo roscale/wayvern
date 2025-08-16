@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:wayvern_flutter/src/mouse_button_tracker.dart';
-import 'package:wayvern_flutter/src/window.dart';
+import 'package:wayvern_flutter/src/requests.dart';
 
-final mouseButtonTracker = MouseButtonTracker();
+final _mouseButtonTracker = MouseButtonTracker();
 
 class SurfaceInputListener extends StatelessWidget {
   final int surfaceId;
@@ -25,7 +25,7 @@ class SurfaceInputListener extends StatelessWidget {
       onPointerUp: sendButtons,
       onPointerHover: sendMotion,
       onPointerCancel: sendButtons,
-      child: child,
+      child: AbsorbPointer(child: child),
     );
   }
 
@@ -38,7 +38,7 @@ class SurfaceInputListener extends StatelessWidget {
   }
 
   Future<void> sendButtons(PointerEvent event) async {
-    final buttons = mouseButtonTracker.trackButtons(
+    final buttons = _mouseButtonTracker.trackButtons(
       event.device,
       event.buttons,
     );

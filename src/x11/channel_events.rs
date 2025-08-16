@@ -37,7 +37,9 @@ pub fn handle_channel_events(
         "button" => {
             handle_button(method_call, &mut result, state);
         }
-
+        "focusSurface" => {
+            handle_focus_surface(method_call, &mut result, state);
+        }
         _ => result.not_implemented(),
     }
 }
@@ -119,13 +121,6 @@ fn handle_motion(
         pointer.frame(state);
     }
 
-    let keyboard = state.common.seat.get_keyboard().unwrap();
-    keyboard.set_focus(
-        state,
-        Some(KeyboardFocusTarget::Window(window)),
-        SERIAL_COUNTER.next_serial(),
-    );
-
     result.success(None);
 }
 
@@ -161,6 +156,52 @@ fn handle_button(
         },
     );
     pointer.frame(state);
+
+    result.success(None);
+}
+
+fn handle_focus_surface(
+    method_call: MethodCall,
+    result: &mut Box<dyn MethodResult + 'static>,
+    state: &mut State,
+) {
+    let arguments = method_call.arguments().unwrap();
+    let EncodableValue::List(list) = arguments else {
+        panic!();
+    };
+
+    let surface_id = list[0].long_value().unwrap();
+
+    let window = state
+        .common
+        .space
+        .elements()
+        .find(|window| {
+            window
+                .user_data()
+                .get::<RefCell<MyWindowData>>()
+                .unwrap()
+                .borrow()
+                .surface_id as i64
+                == surface_id
+        })
+        .cloned();
+
+    let Some(window) = window else {
+        let message = format!("Window with surface id {surface_id} doesn't exist");
+        error!(message);
+        result.error("error".to_string(), message, None);
+        return;
+    };
+
+    let keyboard = state.common.seat.get_keyboard().unwrap();
+
+    let _ = window.set_activated(true);
+    keyboard.set_focus(
+        state,
+        Some(KeyboardFocusTarget::Window(window)),
+        SERIAL_COUNTER.next_serial(),
+    );
 
     result.success(None);
 }

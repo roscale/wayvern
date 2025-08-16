@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_bin/focus_manager.dart';
 import 'package:wayvern_flutter/wayvern_flutter.dart' as wayvern;
 
 void main() async {
@@ -8,9 +9,8 @@ void main() async {
   // await wayvern.setInitialWindowSize(1600, 1200);
 
   wayvern.init();
-
-  wayvern.windowCreated.listen((id) => print("Window $id created"));
-  wayvern.windowDestroyed.listen((id) => print("Window $id destroyed"));
+  wayvern.initWindowTracker();
+  initFocusManager();
 
   runWidget(
     ViewCollection(
@@ -79,7 +79,7 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
             Padding(padding: EdgeInsetsGeometry.only(top: 50)),
-    
+
             ListenableBuilder(
               listenable: wayvern.windows,
               builder: (_, _) {
@@ -90,12 +90,15 @@ class _MyHomePageState extends State<MyHomePage> {
                         return ListenableBuilder(
                           listenable: window,
                           builder: (_, _) {
-                            return wayvern.SurfaceInputListener(
-                              surfaceId: window.id,
-                              child: SizedBox(
-                                width: window.width.toDouble(),
-                                height: window.height.toDouble(),
-                                child: Texture(textureId: window.textureId),
+                            return Listener(
+                              onPointerDown: (_) => setFocus(window.id),
+                              child: wayvern.SurfaceInputListener(
+                                surfaceId: window.id,
+                                child: SizedBox(
+                                  width: window.width.toDouble(),
+                                  height: window.height.toDouble(),
+                                  child: Texture(textureId: window.textureId),
+                                ),
                               ),
                             );
                           },
