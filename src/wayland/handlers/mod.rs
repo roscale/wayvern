@@ -6,3 +6,4 @@ pub mod seat;
 pub mod shm;
 pub mod xdg;
 pub mod data_device;
+pub mod xdg_decoration;

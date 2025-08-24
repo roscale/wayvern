@@ -8,9 +8,7 @@ use smithay::{
     reexports::{
         calloop::LoopSignal,
         wayland_server::{
-            DisplayHandle,
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::wl_surface::WlSurface,
+            backend::{ClientData, ClientId, DisconnectReason}, protocol::wl_surface::WlSurface, DisplayHandle
         },
     },
     utils::{Clock, Logical, Monotonic, Size},
@@ -18,7 +16,7 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         dmabuf::DmabufState,
         selection::data_device::DataDeviceState,
-        shell::xdg::XdgShellState,
+        shell::xdg::{decoration::XdgDecorationState, XdgShellState},
         shm::ShmState,
     },
 };
@@ -54,6 +52,7 @@ pub struct Common {
     pub data_device_state: DataDeviceState,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub xdg_decoration_state: XdgDecorationState,
     pub dmabuf_state: DmabufState,
 
     pub next_surface_id: usize,
@@ -142,6 +141,7 @@ impl State {
         let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
         let compositor_state = CompositorState::new::<Self>(&display_handle);
         let xdg_shell_state = XdgShellState::new::<Self>(&display_handle);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&display_handle);
         let dmabuf_state = DmabufState::new();
 
         Self {
@@ -161,6 +161,7 @@ impl State {
                 data_device_state,
                 compositor_state,
                 xdg_shell_state,
+                xdg_decoration_state,
                 dmabuf_state,
                 next_surface_id: 1,
                 next_texture_id: 1,

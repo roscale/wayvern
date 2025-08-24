@@ -17,7 +17,10 @@ use smithay::{
     desktop::{
         PopupKind, PopupManager, Space, Window, WindowSurface, utils::with_surfaces_surface_tree,
     },
-    reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
+    reexports::{
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
+        wayland_server::{Client, protocol::wl_surface::WlSurface},
+    },
     utils::{Logical, Rectangle, Size, Transform},
     wayland::{
         compositor::{
@@ -25,6 +28,7 @@ use smithay::{
             get_parent, is_sync_subsurface,
         },
         seat::WaylandFocus,
+        shell::xdg::ToplevelStateSet,
     },
 };
 use tracing::error;
@@ -219,6 +223,7 @@ fn ensure_initial_configure(
     {
         toplevel.with_pending_state(|states| {
             states.size = initial_window_size;
+            states.states.set(xdg_toplevel::State::Maximized);
         });
         toplevel.send_configure();
     }

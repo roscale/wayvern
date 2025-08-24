@@ -121,15 +121,12 @@ pub fn init_x11_backend(
     Ok(())
 }
 
-fn create_dmabuf_global<R>(
+fn create_dmabuf_global(
     dh: &DisplayHandle,
     state: &mut State,
     render_node: DrmNode,
-    renderer: &mut R,
-) -> Result<()>
-where
-    R: ImportDma,
-{
+    renderer: &mut GlesRenderer,
+) -> Result<()> {
     let default_feedback =
         DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats())
             .build()

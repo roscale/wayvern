@@ -53,6 +53,6 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
-    return MasterLayout();
+    return Container(color: Color(0x55000000), child: MasterLayout());
   }
 }
