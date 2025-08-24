@@ -22,6 +22,7 @@ use crate::{
         standard_method_codec::StandardMethodCodec,
     },
     state::State,
+    utils::GetSurfaceId,
 };
 
 impl XdgShellHandler for State {
@@ -68,12 +69,7 @@ impl XdgShellHandler for State {
 
         self.common.space.unmap_elem(&window);
 
-        let surface_id = window
-            .user_data()
-            .get::<RefCell<MyWindowData>>()
-            .unwrap()
-            .borrow_mut()
-            .surface_id;
+        let surface_id = window.get_surface_id();
 
         MethodChannel::new(
             self.common.flutter.engine.binary_messenger(),

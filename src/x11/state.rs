@@ -10,7 +10,7 @@ use smithay::{
         },
         drm::{DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
-        renderer::{Bind, ImportDma, gles::GlesRenderer},
+        renderer::{Bind, ImportDma, ImportEgl, gles::GlesRenderer},
         x11::{Window, WindowBuilder, X11Backend, X11Handle, X11Surface},
     },
     output::Mode,
@@ -21,8 +21,9 @@ use smithay::{
         wayland_server::DisplayHandle,
     },
     utils::DeviceFd,
+    wayland::dmabuf::DmabufFeedbackBuilder,
 };
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     channel_method_call_handler::ChannelMethodCallHandler,
@@ -48,7 +49,7 @@ pub struct X11State {
 
 #[derive(Debug)]
 pub struct Surface {
-    pub window: Window,
+    pub _window: Window,
     pub x11_surface: X11Surface,
     pub view_id: i64,
     pub swapchain: Swapchain<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>>,
@@ -90,7 +91,11 @@ pub fn init_x11_backend(
     let mut renderer = unsafe { GlesRenderer::new(egl_context) }
         .with_context(|| "Failed to initialize renderer")?;
 
-    init_egl_client_side(display_handle, state, drm_node, &mut renderer)?;
+    if renderer.bind_wl_display(display_handle).is_ok() {
+        info!("EGL hardware-acceleration enabled");
+    }
+
+    create_dmabuf_global(display_handle, state, drm_node, &mut renderer)?;
 
     state.backend = BackendState::X11(Box::new(X11State {
         x11_handle,
@@ -116,27 +121,25 @@ pub fn init_x11_backend(
     Ok(())
 }
 
-fn init_egl_client_side<R>(
-    _dh: &DisplayHandle,
-    _state: &mut State,
-    _render_node: DrmNode,
-    _renderer: &mut R,
+fn create_dmabuf_global<R>(
+    dh: &DisplayHandle,
+    state: &mut State,
+    render_node: DrmNode,
+    renderer: &mut R,
 ) -> Result<()>
 where
     R: ImportDma,
 {
-    // let default_feedback =
-    //     DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats())
-    //         .build()
-    //         .unwrap();
-    //
-    // let _dmabuf_global = state
-    //     .common
-    //     .dmabuf_state
-    //     .create_global_with_default_feedback::<State>(dh, &default_feedback);
-    //
-    // info!("EGL hardware-acceleration enabled.");
-    //
+    let default_feedback =
+        DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats())
+            .build()
+            .unwrap();
+
+    let _dmabuf_global = state
+        .common
+        .dmabuf_state
+        .create_global_with_default_feedback::<State>(dh, &default_feedback);
+
     Ok(())
 }
 
@@ -189,7 +192,7 @@ impl State {
         };
 
         let surface = Surface {
-            window,
+            _window: window,
             x11_surface,
             view_id: {
                 let id = x11_state.next_view_id;

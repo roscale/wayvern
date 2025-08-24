@@ -7,7 +7,7 @@ void initFocusManager() {
   wayvern.events.listen((event) async {
     switch (event) {
       case wayvern.WindowCreated(:final surfaceId):
-        await wayvern.focusSurface(surfaceId);
+        // await wayvern.focusSurface(surfaceId);
         _stack.add(surfaceId);
 
       case wayvern.WindowDestroyed(:final surfaceId):
@@ -15,7 +15,7 @@ void initFocusManager() {
         _stack.remove(surfaceId);
 
         if (inFocus && _stack.isNotEmpty) {
-          await wayvern.focusSurface(_stack.last);
+          await wayvern.focusSurface(_stack.last, true);
         }
 
       default:

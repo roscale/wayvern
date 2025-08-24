@@ -98,9 +98,9 @@ impl State {
         }
 
         // Get the surface with the biggest buffer scale.
-        let mut max_scale = 0;
+        let mut biggest_scale = 0;
         with_surfaces_surface_tree(surface, |_, data| {
-            max_scale = max_scale.max(
+            biggest_scale = biggest_scale.max(
                 data.cached_state
                     .get::<SurfaceAttributes>()
                     .current()
@@ -109,7 +109,7 @@ impl State {
         });
 
         let logical_size = window.bbox().size;
-        let buffer_size = logical_size.to_buffer(max_scale, Transform::Normal);
+        let buffer_size = logical_size.to_buffer(biggest_scale, Transform::Normal);
         let physical_size = logical_size.to_physical(output_scale.integer_scale());
 
         let mut texture: GlesTexture = renderer

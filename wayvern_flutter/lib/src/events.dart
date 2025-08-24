@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:wayvern_flutter/src/texture.dart';
+
 final _streamController = StreamController<Event>.broadcast();
 
 final eventsSink = _streamController.sink;
@@ -21,8 +23,7 @@ final class WindowDestroyed extends Event {
 
 final class TextureAttached extends Event {
   final int surfaceId;
-  final int textureId;
-  final int width, height;
+  final Texture texture;
 
-  TextureAttached(this.surfaceId, this.textureId, this.width, this.height);
+  TextureAttached(this.surfaceId, this.texture);
 }

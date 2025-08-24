@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:wayvern_flutter/src/events.dart';
+import 'package:wayvern_flutter/src/texture.dart';
 
 final windows = Windows();
 
@@ -12,13 +13,8 @@ void initWindowTracker() {
       case WindowDestroyed(:final surfaceId):
         windows.remove(surfaceId);
 
-      case TextureAttached(
-        :final surfaceId,
-        :final textureId,
-        :final width,
-        :final height,
-      ):
-        windows.map[surfaceId]!.attachTexture(textureId, width, height);
+      case TextureAttached(:final surfaceId, :final texture):
+        windows.map[surfaceId]!.attachTexture(texture);
     }
   });
 }
@@ -44,21 +40,14 @@ class Windows with ChangeNotifier {
 class Window with ChangeNotifier {
   final int id;
 
-  int _textureId = 0;
-  int _width = 0;
-  int _height = 0;
+  Texture? _texture;
 
   Window(this.id);
 
-  int get textureId => _textureId;
-  int get width => _width;
-  int get height => _height;
+  Texture? get texture => _texture;
 
-  void attachTexture(int textureId, int width, int height) {
-    _textureId = textureId;
-    _width = width;
-    _height = height;
-
+  void attachTexture(Texture texture) {
+    _texture = texture;
     notifyListeners();
   }
 }

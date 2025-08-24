@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:wayvern_flutter/src/events.dart';
+import 'package:wayvern_flutter/src/texture.dart';
 
 const channel = MethodChannel('wayvern/window');
 
@@ -35,5 +36,7 @@ void handleTextureAttached(dynamic arguments) {
   final width = args[2];
   final height = args[3];
 
-  eventsSink.add(TextureAttached(surfaceId, textureId, width, height));
+  final texture = Texture(textureId: textureId, width: width, height: height);
+
+  eventsSink.add(TextureAttached(surfaceId, texture));
 }
