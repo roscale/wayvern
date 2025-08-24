@@ -17,7 +17,7 @@ use smithay::{
 use std::{
     ffi::c_void,
     sync::{Arc, Mutex, mpsc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tracing::error;
 
@@ -310,19 +310,23 @@ pub fn start_flutter_engine(loop_handle: LoopHandle<State>, state: &mut State) -
         })
         .unwrap();
 
-    let timer = Timer::from_duration(Duration::from_millis(7));
+    const _144_HZ_NS: u64 = 1_000_000_000 / 144;
+    let mut vsync = Instant::now();
+
+    let timer = Timer::from_duration(Duration::from_nanos(_144_HZ_NS));
     loop_handle
         .insert_source(timer, move |_, _, state| {
             if let Some(baton) = pending_baton.lock().unwrap().take() {
                 let engine = &mut state.common.flutter.engine;
                 let now = engine.current_time_ns();
 
-                if let Err(err) = engine.on_vsync(baton, now, now + 7000000) {
+                if let Err(err) = engine.on_vsync(baton, now, now + _144_HZ_NS) {
                     error!("engine.on_vsync failed, {err}");
                 }
             }
 
-            TimeoutAction::ToDuration(Duration::from_millis(7))
+            vsync += Duration::from_nanos(_144_HZ_NS);
+            TimeoutAction::ToInstant(vsync)
         })
         .unwrap();
 
