@@ -75,7 +75,7 @@ fn handle_resize_window(
     toplevel.with_pending_state(|states| {
         states.size = Some((width as i32, height as i32).into());
     });
-    toplevel.send_configure();
+    toplevel.send_pending_configure();
 
     result.success(None);
 }

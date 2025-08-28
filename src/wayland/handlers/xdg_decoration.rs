@@ -11,23 +11,29 @@ impl XdgDecorationHandler for State {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ServerSide);
         });
+
+        if toplevel.is_initial_configure_sent() {
+            toplevel.send_configure();
+        }
     }
+
     fn request_mode(&mut self, toplevel: ToplevelSurface, _mode: Mode) {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ServerSide);
         });
 
         if toplevel.is_initial_configure_sent() {
-            toplevel.send_pending_configure();
+            toplevel.send_configure();
         }
     }
+
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ServerSide);
         });
 
         if toplevel.is_initial_configure_sent() {
-            toplevel.send_pending_configure();
+            toplevel.send_configure();
         }
     }
 }

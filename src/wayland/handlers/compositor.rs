@@ -28,7 +28,6 @@ use smithay::{
             get_parent, is_sync_subsurface,
         },
         seat::WaylandFocus,
-        shell::xdg::ToplevelStateSet,
     },
 };
 use tracing::error;

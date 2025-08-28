@@ -4,7 +4,10 @@ use smithay::{
     backend::renderer::{Texture, gles::GlesTexture},
     delegate_xdg_shell,
     desktop::{PopupKind, Window},
-    reexports::wayland_server::protocol::wl_seat::WlSeat,
+    reexports::{
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
+        wayland_server::protocol::{wl_output::WlOutput, wl_seat::WlSeat},
+    },
     utils::Serial,
     wayland::{
         compositor::with_states,
@@ -90,6 +93,26 @@ impl XdgShellHandler for State {
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        surface.with_pending_state(|state_request| {
+            state_request.states.set(xdg_toplevel::State::Maximized);
+        });
+
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
+
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<WlOutput>) {
+        surface.with_pending_state(|state_request| {
+            state_request.states.set(xdg_toplevel::State::Fullscreen);
+        });
+
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
 
     fn reposition_request(
         &mut self,
